@@ -3,6 +3,7 @@
  * A clean, highly legible Swiss Slate styled dashboard.
  */
 
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect } from 'react';
 import { 
   BarChart2, Shield, Calendar, Users, TrendingUp, Layers, DollarSign, 
@@ -156,7 +157,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
   // --- PERSISTENT STATE ---
   const [subState, setSubState] = useState<OrgSubscriptionState>(() => {
     try {
-      const saved = localStorage.getItem('rc_subscription_state');
+      const saved = appStore.getItem('rc_subscription_state');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return DEFAULT_SUBSCRIPTION;
@@ -164,7 +165,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
   const [paymentHistory, setPaymentHistory] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem('rc_payment_history');
+      const saved = appStore.getItem('rc_payment_history');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return [
@@ -176,7 +177,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
   const [savedDashboards, setSavedDashboards] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('rc_saved_dashboards');
+      const saved = appStore.getItem('rc_saved_dashboards');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return ['Executive Q2 Revenue View', 'Weekly Lead Progression Track'];
@@ -210,15 +211,15 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
   // Save State
   useEffect(() => {
-    localStorage.setItem('rc_subscription_state', JSON.stringify(subState));
+    appStore.setItem('rc_subscription_state', JSON.stringify(subState));
   }, [subState]);
 
   useEffect(() => {
-    localStorage.setItem('rc_payment_history', JSON.stringify(paymentHistory));
+    appStore.setItem('rc_payment_history', JSON.stringify(paymentHistory));
   }, [paymentHistory]);
 
   useEffect(() => {
-    localStorage.setItem('rc_saved_dashboards', JSON.stringify(savedDashboards));
+    appStore.setItem('rc_saved_dashboards', JSON.stringify(savedDashboards));
   }, [savedDashboards]);
 
   // Handle Subscription Actions
@@ -391,7 +392,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
             </div>
             <div>
               <span className="text-[10px] font-mono text-purple-400 font-bold uppercase tracking-wider bg-purple-500/10 px-2 py-0.5 rounded">
-                SPRINT 23 ENTERPRISE
+                Analytics
               </span>
               <h2 className="text-xl font-bold text-white font-display mt-0.5">
                 Analytics, BI & Membership Control Hub
@@ -507,7 +508,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {/* Date range filter */}
           <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">DATE PERIOD</label>
+            <label className="block text-[10px] text-slate-400 font-mono mb-1">Date Period</label>
             <select 
               value={dateFilter} 
               onChange={(e) => {
@@ -526,7 +527,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
           {/* Department filter */}
           <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">DEPARTMENT</label>
+            <label className="block text-[10px] text-slate-400 font-mono mb-1">Department</label>
             <select 
               value={deptFilter} 
               onChange={(e) => {
@@ -546,7 +547,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
           {/* Project Roster Filter */}
           <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">PROJECT TARGET</label>
+            <label className="block text-[10px] text-slate-400 font-mono mb-1">Project Target</label>
             <select 
               value={projectFilter} 
               onChange={(e) => {
@@ -565,7 +566,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
           {/* Location / Geography */}
           <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">GEOGRAPHIC REGION</label>
+            <label className="block text-[10px] text-slate-400 font-mono mb-1">Geographic Region</label>
             <select 
               value={locationFilter} 
               onChange={(e) => {
@@ -586,7 +587,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
         {/* Additional Collateral Filters */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-slate-850/40">
           <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">B2B CLIENT / CUSTOMER</label>
+            <label className="block text-[10px] text-slate-400 font-mono mb-1">B2B Client / Customer</label>
             <select value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 outline-none">
               <option>All</option>
               <option>Apex Builders Ltd</option>
@@ -595,7 +596,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
             </select>
           </div>
           <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">APPROVED SUPPLIER</label>
+            <label className="block text-[10px] text-slate-400 font-mono mb-1">Approved Supplier</label>
             <select value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 outline-none">
               <option>All</option>
               <option>Tata Steel Ltd</option>
@@ -604,7 +605,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
             </select>
           </div>
           <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">SITE SUPERVISOR / EE</label>
+            <label className="block text-[10px] text-slate-400 font-mono mb-1">Site Supervisor / EE</label>
             <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 outline-none">
               <option>All</option>
               <option>Vikram Rathore (PM)</option>
@@ -625,7 +626,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
               }}
               className="w-full text-center py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-400 hover:text-white rounded-lg text-[10px] font-mono tracking-wider font-bold transition-all cursor-pointer"
             >
-              CLEAR SECONDARY FILTERS
+              Clear Secondary Filters
             </button>
           </div>
         </div>
@@ -672,7 +673,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
             {/* Custom Saved Dashboard Toggle */}
             <div className="flex items-center gap-2 bg-slate-950 px-2 py-1.5 rounded-xl border border-slate-800">
-              <span className="text-[10px] font-mono text-slate-500 uppercase font-bold">SAVED VIEW:</span>
+              <span className="text-[10px] font-mono text-slate-500 uppercase font-bold">Saved View:</span>
               <select
                 value={customDashboardSelection}
                 onChange={(e: any) => {
@@ -690,7 +691,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                 onClick={handleSaveDashboardView}
                 className="ml-1 px-2 py-0.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded text-[9px] font-mono transition-all cursor-pointer"
               >
-                SAVE NEW VIEW
+                Save New View
               </button>
             </div>
           </div>
@@ -705,8 +706,8 @@ export default function BusinessAnalyticsSubscriptionEngine({
                 {/* Gauge: Business Health Score */}
                 <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider">BUSINESS HEALTH RATING</span>
-                    <span className="text-[10px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 px-2 py-0.5 rounded font-bold">RERA COMPLIANT</span>
+                    <span className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider">Business Health Rating</span>
+                    <span className="text-[10px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 px-2 py-0.5 rounded font-bold">RERA Compliant</span>
                   </div>
                   
                   <div className="py-6 flex flex-col items-center justify-center">
@@ -718,7 +719,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                       </svg>
                       <div className="absolute flex flex-col items-center">
                         <span className="text-3xl font-extrabold text-white font-display">92.4</span>
-                        <span className="text-[9px] font-mono text-slate-500">OUT OF 100</span>
+                        <span className="text-[9px] font-mono text-slate-500">Out of 100</span>
                       </div>
                     </div>
                     <div className="text-center mt-3">
@@ -731,15 +732,15 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
                   <div className="border-t border-slate-800/60 pt-3 text-[11px] text-slate-400 flex items-center justify-between">
                     <span>Audit Status: Passed</span>
-                    <span className="font-mono text-[9px] text-slate-500">NEXT UPDATE: 24 HRS</span>
+                    <span className="font-mono text-[9px] text-slate-500">Next Update: 24 Hrs</span>
                   </div>
                 </div>
 
                 {/* Card: Revenue Overview */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider">REVENUE OVERVIEW</span>
-                    <span className="text-[10px] bg-indigo-500/15 text-indigo-400 px-2 py-0.5 rounded font-mono">Q2 TARGETS</span>
+                    <span className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider">Revenue Overview</span>
+                    <span className="text-[10px] bg-indigo-500/15 text-indigo-400 px-2 py-0.5 rounded font-mono">Q2 Targets</span>
                   </div>
 
                   <div className="space-y-4 py-4">
@@ -784,8 +785,8 @@ export default function BusinessAnalyticsSubscriptionEngine({
                 {/* Card: Sales Pipeline Stage analysis */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider">SALES PIPELINE STAGES</span>
-                    <span className="text-[10px] text-slate-500 font-mono">142 CONTRACTS</span>
+                    <span className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider">Sales Pipeline Stages</span>
+                    <span className="text-[10px] text-slate-500 font-mono">142 Contracts</span>
                   </div>
 
                   <div className="space-y-2.5 py-3">
@@ -835,7 +836,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                 
                 {/* Block 1: Lead Conversion */}
                 <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 font-mono">LEAD CONVERSION</div>
+                  <div className="text-xs text-slate-500 font-mono">Lead Conversion</div>
                   <div className="text-2xl font-extrabold text-white mt-1">34.4%</div>
                   <div className="flex justify-between items-center text-[10px] text-emerald-400 font-semibold mt-1.5">
                     <span>Target: 30% met</span>
@@ -845,7 +846,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
                 {/* Block 2: Project Progress */}
                 <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 font-mono">PROJECT PORTFOLIO</div>
+                  <div className="text-xs text-slate-500 font-mono">Project Portfolio</div>
                   <div className="text-2xl font-extrabold text-white mt-1">88% <span className="text-xs font-normal text-slate-400">Milestones</span></div>
                   <div className="flex justify-between items-center text-[10px] text-emerald-400 font-semibold mt-1.5">
                     <span>On-Schedule</span>
@@ -855,7 +856,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
                 {/* Block 3: Procurement Summary */}
                 <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 font-mono">PROCUREMENT BUDGET</div>
+                  <div className="text-xs text-slate-500 font-mono">Procurement Budget</div>
                   <div className="text-2xl font-extrabold text-white mt-1">84% <span className="text-xs font-normal text-slate-400">Utilized</span></div>
                   <div className="flex justify-between items-center text-[10px] text-emerald-400 font-semibold mt-1.5">
                     <span>Save: ₹11.6L (12.4%)</span>
@@ -865,7 +866,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
                 {/* Block 4: Inventory & Stock */}
                 <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 font-mono">INVENTORY VALUATION</div>
+                  <div className="text-xs text-slate-500 font-mono">Inventory Valuation</div>
                   <div className="text-2xl font-extrabold text-white mt-1">₹58.6 Lakhs</div>
                   <div className="flex justify-between items-center text-[10px] text-amber-400 font-semibold mt-1.5">
                     <span>2 Stockout Warnings</span>
@@ -880,7 +881,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                 
                 {/* Employee summary */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-                  <h4 className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider mb-3">EMPLOYEE & LABOR ALLOCATION</h4>
+                  <h4 className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider mb-3">Employee & Labor Allocation</h4>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between p-2.5 bg-slate-950 rounded-lg">
                       <span className="text-xs font-semibold text-slate-300">Total Active Workforce</span>
@@ -899,7 +900,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
                 {/* Customer Growth */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-                  <h4 className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider mb-3">B2B NETWORK CUSTOMER GROWTH</h4>
+                  <h4 className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider mb-3">B2B Network Customer Growth</h4>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between p-2.5 bg-slate-950 rounded-lg">
                       <span className="text-xs font-semibold text-slate-300">New Registered Entities (Month)</span>
@@ -918,7 +919,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
                 {/* Organization Entitlements / Performance limits */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-                  <h4 className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider mb-3">ORGANIZATION PERFORMANCE & ENTITLEMENT LIMITS</h4>
+                  <h4 className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider mb-3">Organization Performance & Entitlement Limits</h4>
                   <div className="space-y-3">
                     <div>
                       <div className="flex justify-between text-xs text-slate-400 mb-1">
@@ -962,7 +963,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                     <p className="text-xs text-slate-400">Visual comparison of monthly operational costs vs. sales pipeline revenue.</p>
                   </div>
                   <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
-                    <span className="text-[10px] text-slate-400 px-2 font-mono">Q2 PROGRESS</span>
+                    <span className="text-[10px] text-slate-400 px-2 font-mono">Q2 Progress</span>
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   </div>
                 </div>
@@ -1068,17 +1069,17 @@ export default function BusinessAnalyticsSubscriptionEngine({
                 </div>
                 <div className="space-y-3">
                   <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">AVERAGE CONVERSION TIME</div>
+                    <div className="text-[10px] text-slate-500 font-mono">Average Conversion Time</div>
                     <div className="text-lg font-bold text-white">4.2 Days</div>
                     <p className="text-[10px] text-slate-400">Time from directory lead capture to active RFQ proposal.</p>
                   </div>
                   <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">ACQUISITION COST (CAC)</div>
+                    <div className="text-[10px] text-slate-500 font-mono">Acquisition Cost (CAC)</div>
                     <div className="text-lg font-bold text-emerald-400">₹450 / Lead</div>
                     <p className="text-[10px] text-slate-400">Average platform cost based on subscription level metrics.</p>
                   </div>
                   <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">WIN RATE BY PIPELINE</div>
+                    <div className="text-[10px] text-slate-500 font-mono">Win Rate by Pipeline</div>
                     <div className="text-lg font-bold text-white">34.4%</div>
                     <p className="text-[10px] text-slate-400">Quotations approved vs total proposals submitted.</p>
                   </div>
@@ -1095,17 +1096,17 @@ export default function BusinessAnalyticsSubscriptionEngine({
                 </div>
                 <div className="space-y-3">
                   <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">SUPPLIER COMPLIANCE RATIO</div>
+                    <div className="text-[10px] text-slate-500 font-mono">Supplier Compliance Ratio</div>
                     <div className="text-lg font-bold text-emerald-400">97.8% On-Time</div>
                     <p className="text-[10px] text-slate-400">Raw materials delivery conforming to contract SLAs.</p>
                   </div>
                   <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">RFQ SAVINGS INDEX</div>
+                    <div className="text-[10px] text-slate-500 font-mono">RFQ Savings Index</div>
                     <div className="text-lg font-bold text-white">12.4% Average</div>
                     <p className="text-[10px] text-slate-400">Savings calculated compared to baseline offline market rates.</p>
                   </div>
                   <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">STOCKOUT FREQUENCY</div>
+                    <div className="text-[10px] text-slate-500 font-mono">Stockout Frequency</div>
                     <div className="text-lg font-bold text-amber-400">0.4% / Month</div>
                     <p className="text-[10px] text-slate-400">Critical items running out before milestone delivery cycles.</p>
                   </div>
@@ -1122,17 +1123,17 @@ export default function BusinessAnalyticsSubscriptionEngine({
                 </div>
                 <div className="space-y-3">
                   <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">MONTHLY RECURRING REVENUE (MRR)</div>
+                    <div className="text-[10px] text-slate-500 font-mono">Monthly Recurring Revenue (MRR)</div>
                     <div className="text-lg font-bold text-purple-400">₹34.5 Lakhs</div>
                     <p className="text-[10px] text-slate-400">Active recurring membership license billing value.</p>
                   </div>
                   <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">USER RETENTION (CHURN)</div>
+                    <div className="text-[10px] text-slate-500 font-mono">User Retention (Churn)</div>
                     <div className="text-lg font-bold text-emerald-400">0.8% Churn</div>
                     <p className="text-[10px] text-slate-400">Low turnover rate indicating extreme value in active sprints.</p>
                   </div>
                   <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">AVERAGE ARPU (ORGANIZATION)</div>
+                    <div className="text-[10px] text-slate-500 font-mono">Average ARPU (Organization)</div>
                     <div className="text-lg font-bold text-white">₹16,400 / Mo</div>
                     <p className="text-[10px] text-slate-400">Weighted average transaction spend per active enterprise unit.</p>
                   </div>
@@ -1151,7 +1152,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                 <h3 className="text-sm font-bold text-white font-display">Top Commercial Rankings</h3>
                 <div className="space-y-3">
                   <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">TOP PERFORMING REAL ESTATE PROJECTS</span>
+                    <span className="text-[10px] font-mono text-slate-500 uppercase">Top Performing Real Estate Projects</span>
                     <div className="space-y-2 mt-1">
                       <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
                         <span className="text-slate-200">1. DLF CyberPark Phase II</span>
@@ -1165,7 +1166,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                   </div>
 
                   <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">TOP REVENUE-CONTRIBUTING CUSTOMERS</span>
+                    <span className="text-[10px] font-mono text-slate-500 uppercase">Top Revenue-Contributing Customers</span>
                     <div className="space-y-2 mt-1">
                       <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
                         <span className="text-slate-200">1. Apex Builders Ltd</span>
@@ -1179,7 +1180,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                   </div>
 
                   <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">TOP COMPLIANT SUPPLIERS</span>
+                    <span className="text-[10px] font-mono text-slate-500 uppercase">Top Compliant Suppliers</span>
                     <div className="space-y-2 mt-1">
                       <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
                         <span className="text-slate-200">1. Tata Steel Ltd (Tenders)</span>
@@ -1199,7 +1200,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                 <h3 className="text-sm font-bold text-white font-display">Operational Highlights</h3>
                 <div className="space-y-3">
                   <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">BEST SELLING MATERIALS CATEGORIES</span>
+                    <span className="text-[10px] font-mono text-slate-500 uppercase">Best Selling Materials Categories</span>
                     <div className="space-y-2 mt-1">
                       <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
                         <span className="text-slate-200">1. Fe550 Reinforcement Bars</span>
@@ -1213,7 +1214,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                   </div>
 
                   <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">MOST ACTIVE EMPLOYEES (SANDBOX TASK CREDITS)</span>
+                    <span className="text-[10px] font-mono text-slate-500 uppercase">Most Active Employees (Sandbox Task Credits)</span>
                     <div className="space-y-2 mt-1">
                       <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
                         <span className="text-slate-200">1. Vikram Rathore (Project Manager)</span>
@@ -1227,7 +1228,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                   </div>
 
                   <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">PRIMARY ORGANIZATIONAL REVENUE SOURCE</span>
+                    <span className="text-[10px] font-mono text-slate-500 uppercase">Primary Organizational Revenue Source</span>
                     <div className="space-y-2 mt-1">
                       <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
                         <span className="text-slate-200">1. Escrow Project Milestone Cut</span>
@@ -1324,7 +1325,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
             {/* Subscription Actions Panel */}
             <div className="bg-slate-950/80 border border-slate-850 rounded-xl p-4 flex flex-col justify-between">
               <div>
-                <span className="text-[10px] font-mono text-slate-500 uppercase font-bold">MUTATE SUBSCRIPTION STATUS</span>
+                <span className="text-[10px] font-mono text-slate-500 uppercase font-bold">Mutate Subscription Status</span>
                 <p className="text-[10.5px] text-slate-400 mt-1 leading-relaxed">
                   Safely trigger plan actions. Pricing and active compliance policies are adapted in local memory logs.
                 </p>
@@ -1389,7 +1390,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                     <span className="font-semibold">{fItem.label}</span>
                     {isUnlocked ? (
                       <span className="text-[9px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-mono">
-                        UNLOCKED
+                        Unlocked
                       </span>
                     ) : (
                       <div className="flex items-center gap-1 text-red-500 text-[9px] font-mono bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
@@ -1434,7 +1435,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                   >
                     {plan.status === 'Popular' && (
                       <div className="absolute top-0 right-0 bg-purple-600 text-white font-mono text-[8px] font-bold px-2 py-0.5 rounded-bl uppercase tracking-wider">
-                        POPULAR
+                        Popular
                       </div>
                     )}
                     {isActive && (
@@ -1475,7 +1476,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
                       {/* Included Core Features */}
                       <div className="pt-3">
-                        <div className="text-[9px] font-mono text-slate-500 uppercase font-bold tracking-wider mb-1">INCLUDED WORKFLOWS:</div>
+                        <div className="text-[9px] font-mono text-slate-500 uppercase font-bold tracking-wider mb-1">Included Workflows:</div>
                         <div className="flex flex-wrap gap-1">
                           {plan.features.slice(0, 4).map((feat, fIdx) => (
                             <span key={fIdx} className="text-[8px] bg-slate-950 text-slate-400 px-1.5 py-0.5 rounded border border-slate-850 font-mono uppercase">
@@ -1497,7 +1498,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
                           disabled
                           className="w-full text-center bg-slate-950 border border-slate-800 text-slate-500 py-2 rounded-xl text-xs font-semibold font-mono"
                         >
-                          ACTIVE PLAN
+                          Active Plan
                         </button>
                       ) : (
                         <button
@@ -1534,12 +1535,12 @@ export default function BusinessAnalyticsSubscriptionEngine({
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-500 font-mono">
-                    <th className="pb-2.5">INVOICE ID</th>
-                    <th className="pb-2.5">BILLING DATE</th>
-                    <th className="pb-2.5">PLAN TYPE</th>
-                    <th className="pb-2.5">AMOUNT PAID</th>
-                    <th className="pb-2.5">PAYMENT METHOD</th>
-                    <th className="pb-2.5">STATUS</th>
+                    <th className="pb-2.5">Invoice ID</th>
+                    <th className="pb-2.5">Billing Date</th>
+                    <th className="pb-2.5">Plan Type</th>
+                    <th className="pb-2.5">Amount Paid</th>
+                    <th className="pb-2.5">Payment Method</th>
+                    <th className="pb-2.5">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-850">
@@ -1591,14 +1592,14 @@ export default function BusinessAnalyticsSubscriptionEngine({
                     <span className="text-[9px] font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
                       {rep.cat}
                     </span>
-                    <span className="text-[10px] text-slate-500 font-mono">CODE: REP-00{idx+1}</span>
+                    <span className="text-[10px] text-slate-500 font-mono">Code: REP-00{idx+1}</span>
                   </div>
                   <h4 className="text-xs font-bold text-white font-display">{rep.title}</h4>
                   <p className="text-[11px] text-slate-400 leading-relaxed">{rep.desc}</p>
                 </div>
 
                 <div className="flex items-center justify-between border-t border-slate-900 pt-3">
-                  <span className="text-[9.5px] font-mono text-slate-500">FORMATS: PDF, XLS, CSV</span>
+                  <span className="text-[9.5px] font-mono text-slate-500">Formats: PDF, XLS, CSV</span>
                   <button 
                     onClick={() => {
                       onLogTriggered('REPORT_GENERATION_REQUESTED', 'reports', `REP-00${idx+1}`, 'SUCCESS', `Executed custom compilation parameters for ${rep.title}.`);
@@ -1678,7 +1679,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
               {/* Support SLA level */}
               <div>
-                <label className="block text-xs text-slate-300 font-semibold mb-1">SUPPORT LEVEL LEVEL SLA</label>
+                <label className="block text-xs text-slate-300 font-semibold mb-1">Support Level Level SLA</label>
                 <select 
                   value={customPlanState.supportLevel}
                   onChange={(e) => setCustomPlanState({...customPlanState, supportLevel: e.target.value})}
@@ -1693,7 +1694,7 @@ export default function BusinessAnalyticsSubscriptionEngine({
 
               {/* Allowed modules */}
               <div>
-                <label className="block text-xs text-slate-300 font-semibold mb-1.5">PERMITTED COOPERATIVE MODULES</label>
+                <label className="block text-xs text-slate-300 font-semibold mb-1.5">Permitted Cooperative Modules</label>
                 <div className="grid grid-cols-2 gap-2 max-h-24 overflow-y-auto bg-slate-950 p-2 rounded-lg border border-slate-800">
                   {[
                     { key: 'directory', label: 'B2B Directory' },

@@ -1,3 +1,4 @@
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Building2, Users, CheckCircle2, ArrowRight, MapPin, Mail, Phone, 
@@ -304,36 +305,36 @@ export default function BusinessProjectEngine({
     const initData = () => {
       try {
         // Projects Init
-        const storedProjects = localStorage.getItem('realtyconnect_projects');
+        const storedProjects = appStore.getItem('realtyconnect_projects');
         if (storedProjects) {
           setProjects(JSON.parse(storedProjects));
         } else {
-          localStorage.setItem('realtyconnect_projects', JSON.stringify(INITIAL_PROJECTS));
+          appStore.setItem('realtyconnect_projects', JSON.stringify(INITIAL_PROJECTS));
           setProjects(INITIAL_PROJECTS);
         }
 
         // CRM Accounts
-        const savedCrm = localStorage.getItem('realtyconnect_crm_accounts');
+        const savedCrm = appStore.getItem('realtyconnect_crm_accounts');
         if (savedCrm) setCrmAccounts(JSON.parse(savedCrm));
 
         // Leads
-        const savedLeads = localStorage.getItem('realtyconnect_leads');
+        const savedLeads = appStore.getItem('realtyconnect_leads');
         if (savedLeads) setLeadsList(JSON.parse(savedLeads));
 
         // Meetings
-        const savedMeetings = localStorage.getItem('realtyconnect_meetings');
+        const savedMeetings = appStore.getItem('realtyconnect_meetings');
         if (savedMeetings) setMeetingsList(JSON.parse(savedMeetings));
 
         // RFQs
-        const savedRfqs = localStorage.getItem('realtyconnect_rfq_list');
+        const savedRfqs = appStore.getItem('realtyconnect_rfq_list');
         if (savedRfqs) setRfqList(JSON.parse(savedRfqs));
 
         // Marketplace
-        const savedMkt = localStorage.getItem('realtyconnect_marketplace_listings');
+        const savedMkt = appStore.getItem('realtyconnect_marketplace_listings');
         if (savedMkt) setMarketplaceListings(JSON.parse(savedMkt));
 
         // Conversations
-        const savedConvs = localStorage.getItem('realtyconnect_conversations');
+        const savedConvs = appStore.getItem('realtyconnect_conversations');
         if (savedConvs) setConversations(JSON.parse(savedConvs));
       } catch (e) {
         console.error('Error synchronizing local databases for projects:', e);
@@ -348,7 +349,7 @@ export default function BusinessProjectEngine({
 
   const saveProjects = (updated: Project[]) => {
     setProjects(updated);
-    localStorage.setItem('realtyconnect_projects', JSON.stringify(updated));
+    appStore.setItem('realtyconnect_projects', JSON.stringify(updated));
   };
 
   const selectedProject = projects.find(p => p.id === selectedProjectId) || null;
@@ -360,7 +361,7 @@ export default function BusinessProjectEngine({
 
     // Persist into system_notifications so other components can fetch
     try {
-      const currentNotifs = localStorage.getItem('system_notifications');
+      const currentNotifs = appStore.getItem('system_notifications');
       const parsed = currentNotifs ? JSON.parse(currentNotifs) : [];
       const newNotif = {
         id: `noti-p-${Date.now()}`,
@@ -370,7 +371,7 @@ export default function BusinessProjectEngine({
         status: 'sent',
         timestamp: new Date().toISOString()
       };
-      localStorage.setItem('system_notifications', JSON.stringify([newNotif, ...parsed]));
+      appStore.setItem('system_notifications', JSON.stringify([newNotif, ...parsed]));
     } catch(err) {
       console.error(err);
     }
@@ -715,7 +716,7 @@ export default function BusinessProjectEngine({
       updatedConvs = [newConv, ...conversations];
     }
 
-    localStorage.setItem('realtyconnect_conversations', JSON.stringify(updatedConvs));
+    appStore.setItem('realtyconnect_conversations', JSON.stringify(updatedConvs));
     setConversations(updatedConvs);
 
     // Save project history
@@ -799,7 +800,7 @@ export default function BusinessProjectEngine({
         <div>
           <div className="flex items-center gap-2 text-emerald-500 font-mono text-xs uppercase tracking-widest mb-1.5 font-bold">
             <Layers className="w-4 h-4" />
-            <span>Sprint 17 • Enterprise Infrastructure</span>
+            <span>Projects</span>
           </div>
           <h1 className="text-2xl font-bold font-sans text-white flex items-center gap-2">
             RealtyConnect™ Project Portfolio Management Engine
@@ -1124,7 +1125,7 @@ export default function BusinessProjectEngine({
             {/* Expanded Filters */}
             <div className="grid grid-cols-2 md:grid-cols-6 gap-3 pt-2 border-t border-slate-900/50">
               <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-500 block">STATUS</label>
+                <label className="text-[10px] font-mono text-slate-500 block">Status</label>
                 <select
                   value={filterStatus}
                   onChange={e => setFilterStatus(e.target.value)}
@@ -1142,7 +1143,7 @@ export default function BusinessProjectEngine({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-500 block">PRIORITY</label>
+                <label className="text-[10px] font-mono text-slate-500 block">Priority</label>
                 <select
                   value={filterPriority}
                   onChange={e => setFilterPriority(e.target.value)}
@@ -1157,7 +1158,7 @@ export default function BusinessProjectEngine({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-500 block">PROJECT TYPE</label>
+                <label className="text-[10px] font-mono text-slate-500 block">Project Type</label>
                 <select
                   value={filterType}
                   onChange={e => setFilterType(e.target.value)}
@@ -1175,7 +1176,7 @@ export default function BusinessProjectEngine({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-500 block">DEVELOPER / CO</label>
+                <label className="text-[10px] font-mono text-slate-500 block">Developer / CO</label>
                 <select
                   value={filterCompany}
                   onChange={e => setFilterCompany(e.target.value)}
@@ -1187,7 +1188,7 @@ export default function BusinessProjectEngine({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-500 block">LOCATION</label>
+                <label className="text-[10px] font-mono text-slate-500 block">Location</label>
                 <input
                   type="text"
                   placeholder="e.g. Mumbai, Kalyan"
@@ -1520,11 +1521,11 @@ export default function BusinessProjectEngine({
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 text-xs">
                       <div className="p-3 bg-slate-950/40 border border-slate-900 rounded-xl space-y-1">
-                        <span className="text-[9px] font-mono text-slate-500 block uppercase">START DATE</span>
+                        <span className="text-[9px] font-mono text-slate-500 block uppercase">Start Date</span>
                         <span className="text-slate-200 font-semibold">{selectedProject.startDate}</span>
                       </div>
                       <div className="p-3 bg-slate-950/40 border border-slate-900 rounded-xl space-y-1">
-                        <span className="text-[9px] font-mono text-slate-500 block uppercase">TARGET COMPLETION</span>
+                        <span className="text-[9px] font-mono text-slate-500 block uppercase">Target Completion</span>
                         <span className="text-slate-200 font-semibold">{selectedProject.expectedCompletion}</span>
                       </div>
                     </div>
@@ -1878,11 +1879,11 @@ export default function BusinessProjectEngine({
 
                   <div className="grid grid-cols-2 gap-2 text-xs pt-2">
                     <div>
-                      <span className="text-[9px] font-mono text-slate-500 block uppercase">PRIORITY</span>
+                      <span className="text-[9px] font-mono text-slate-500 block uppercase">Priority</span>
                       <span className="text-slate-200 font-semibold">{selectedProject.priority}</span>
                     </div>
                     <div>
-                      <span className="text-[9px] font-mono text-slate-500 block uppercase">STATUS</span>
+                      <span className="text-[9px] font-mono text-slate-500 block uppercase">Status</span>
                       <span className="text-slate-200 font-semibold">{selectedProject.status}</span>
                     </div>
                   </div>
@@ -2021,7 +2022,7 @@ export default function BusinessProjectEngine({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">PROJECT TYPE</label>
+                  <label className="text-slate-400 font-mono">Project Type</label>
                   <select
                     value={newProj.type}
                     onChange={e => setNewProj({ ...newProj, type: e.target.value })}
@@ -2040,7 +2041,7 @@ export default function BusinessProjectEngine({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">PROJECT MANAGER</label>
+                  <label className="text-slate-400 font-mono">Project Manager</label>
                   <input
                     type="text"
                     placeholder="Vikram Malhotra"
@@ -2050,7 +2051,7 @@ export default function BusinessProjectEngine({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono font-bold text-emerald-500">CAPITAL BUDGET (₹ LAKHS)</label>
+                  <label className="text-slate-400 font-mono font-bold text-emerald-500">Capital Budget (₹ Lakhs)</label>
                   <input
                     type="number"
                     value={newProj.budget}
@@ -2062,7 +2063,7 @@ export default function BusinessProjectEngine({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">START DATE</label>
+                  <label className="text-slate-400 font-mono">Start Date</label>
                   <input
                     type="date"
                     value={newProj.startDate}
@@ -2071,7 +2072,7 @@ export default function BusinessProjectEngine({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">TARGET COMPLETION</label>
+                  <label className="text-slate-400 font-mono">Target Completion</label>
                   <input
                     type="date"
                     value={newProj.expectedCompletion}
@@ -2083,7 +2084,7 @@ export default function BusinessProjectEngine({
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">PRIORITY</label>
+                  <label className="text-slate-400 font-mono">Priority</label>
                   <select
                     value={newProj.priority}
                     onChange={e => setNewProj({ ...newProj, priority: e.target.value as any })}
@@ -2096,7 +2097,7 @@ export default function BusinessProjectEngine({
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">INITIAL STATUS</label>
+                  <label className="text-slate-400 font-mono">Initial Status</label>
                   <select
                     value={newProj.status}
                     onChange={e => setNewProj({ ...newProj, status: e.target.value as any })}
@@ -2109,7 +2110,7 @@ export default function BusinessProjectEngine({
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">INITIAL PHASE</label>
+                  <label className="text-slate-400 font-mono">Initial Phase</label>
                   <select
                     value={newProj.phase}
                     onChange={e => setNewProj({ ...newProj, phase: e.target.value as any })}
@@ -2125,7 +2126,7 @@ export default function BusinessProjectEngine({
               </div>
 
               <div className="space-y-1">
-                <label className="text-slate-400 font-mono">PROJECT DESCRIPTION & SITE SPECS</label>
+                <label className="text-slate-400 font-mono">Project Description & Site Specs</label>
                 <textarea
                   rows={3}
                   placeholder="Outline the construction scope, parameters, concrete grades, RERA clearance IDs..."
@@ -2181,7 +2182,7 @@ export default function BusinessProjectEngine({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">ASSIGN TO</label>
+                  <label className="text-slate-400 font-mono">Assign to</label>
                   <input
                     type="text"
                     placeholder="Amit Kumar"
@@ -2191,7 +2192,7 @@ export default function BusinessProjectEngine({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">DUE DATE</label>
+                  <label className="text-slate-400 font-mono">Due Date</label>
                   <input
                     type="date"
                     value={newTask.dueDate}
@@ -2203,7 +2204,7 @@ export default function BusinessProjectEngine({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">PRIORITY</label>
+                  <label className="text-slate-400 font-mono">Priority</label>
                   <select
                     value={newTask.priority}
                     onChange={e => setNewTask({ ...newTask, priority: e.target.value as any })}
@@ -2216,7 +2217,7 @@ export default function BusinessProjectEngine({
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">INITIAL PROGRESS</label>
+                  <label className="text-slate-400 font-mono">Initial Progress</label>
                   <input
                     type="number"
                     min="0"
@@ -2229,7 +2230,7 @@ export default function BusinessProjectEngine({
               </div>
 
               <div className="space-y-1">
-                <label className="text-slate-400 font-mono">TASK WORK NOTES</label>
+                <label className="text-slate-400 font-mono">Task Work Notes</label>
                 <textarea
                   rows={2}
                   placeholder="Notes for execution team..."
@@ -2295,7 +2296,7 @@ export default function BusinessProjectEngine({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-mono">INITIAL STATUS</label>
+                  <label className="text-slate-400 font-mono">Initial Status</label>
                   <select
                     value={newMilestone.status}
                     onChange={e => setNewMilestone({ ...newMilestone, status: e.target.value as any })}

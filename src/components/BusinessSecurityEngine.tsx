@@ -3,6 +3,8 @@
  * A high-fidelity, Swiss Slate styled administrative suite.
  */
 
+import { appStore } from '../lib/appStore';
+import { usePersistentState } from '../lib/usePersistentState';
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, ShieldCheck, ShieldAlert, Lock, Unlock, Key, Users, UserCheck, UserX, 
@@ -132,7 +134,7 @@ export default function BusinessSecurityEngine({
   // --- STATE PERSISTENCE & LOCAL CACHE ---
   const [users, setUsers] = useState<UserAccessItem[]>(() => {
     try {
-      const saved = localStorage.getItem('rc_security_users');
+      const saved = appStore.getItem('rc_security_users');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return INITIAL_USERS;
@@ -140,7 +142,7 @@ export default function BusinessSecurityEngine({
 
   const [roles, setRoles] = useState<SystemRoleItem[]>(() => {
     try {
-      const saved = localStorage.getItem('rc_security_roles');
+      const saved = appStore.getItem('rc_security_roles');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return INITIAL_ROLES;
@@ -148,13 +150,13 @@ export default function BusinessSecurityEngine({
 
   const [policies, setPolicies] = useState<CompliancePolicy[]>(() => {
     try {
-      const saved = localStorage.getItem('rc_security_policies');
+      const saved = appStore.getItem('rc_security_policies');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return INITIAL_POLICIES;
   });
 
-  const [dataChanges, setDataChanges] = useState<DataChangeRecord[]>(INITIAL_CHANGES);
+  const [dataChanges, setDataChanges] = usePersistentState<DataChangeRecord[]>('rc_security_data_changes', INITIAL_CHANGES);
 
   // --- COMPONENT INTERACTIVITY TABS ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'roles' | 'sessions' | 'compliance' | 'integrations'>('dashboard');
@@ -222,15 +224,15 @@ export default function BusinessSecurityEngine({
 
   // Save to LocalStorage
   useEffect(() => {
-    localStorage.setItem('rc_security_users', JSON.stringify(users));
+    appStore.setItem('rc_security_users', JSON.stringify(users));
   }, [users]);
 
   useEffect(() => {
-    localStorage.setItem('rc_security_roles', JSON.stringify(roles));
+    appStore.setItem('rc_security_roles', JSON.stringify(roles));
   }, [roles]);
 
   useEffect(() => {
-    localStorage.setItem('rc_security_policies', JSON.stringify(policies));
+    appStore.setItem('rc_security_policies', JSON.stringify(policies));
   }, [policies]);
 
 
@@ -643,7 +645,7 @@ export default function BusinessSecurityEngine({
             </div>
             <div>
               <span className="text-[10px] font-mono text-indigo-400 font-bold uppercase tracking-wider bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
-                SPRINT 25 COMPLIANCE
+                Compliance
               </span>
               <h2 className="text-xl font-bold text-white font-display mt-0.5">
                 Enterprise Security & Access Governance
@@ -767,7 +769,7 @@ export default function BusinessSecurityEngine({
 
         {/* Global Export Action Drawer */}
         <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
-          <span className="text-[10px] text-slate-500 font-mono font-bold px-1.5">REPORTS:</span>
+          <span className="text-[10px] text-slate-500 font-mono font-bold px-1.5">Reports:</span>
           <button 
             onClick={() => setActiveReportPreview('User Access Report')}
             className="px-2 py-1 text-[10px] font-semibold bg-slate-900 hover:bg-slate-850 rounded text-slate-400 hover:text-indigo-400 border border-slate-800 transition-all cursor-pointer"
@@ -787,7 +789,7 @@ export default function BusinessSecurityEngine({
       {/* 3. SWITCHABLE CORE WORKSPACES */}
 
       {/* ==========================================
-          TAB 1: SECURITY DASHBOARD
+          Tab 1: Security Dashboard
          ========================================== */}
       {activeTab === 'dashboard' && (
         <div className="space-y-6" id="sec-dashboard-tab">
@@ -796,7 +798,7 @@ export default function BusinessSecurityEngine({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4.5">
-              <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">TOTAL SECURITY USERS</div>
+              <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Total Security Users</div>
               <div className="text-3xl font-bold font-display text-white mt-1.5">{users.length}</div>
               <div className="flex items-center justify-between text-[10px] text-emerald-400 font-mono mt-1">
                 <span>{users.filter(u => u.status === 'Active').length} Active</span>
@@ -805,7 +807,7 @@ export default function BusinessSecurityEngine({
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4.5">
-              <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">ACTIVE CONCURRENT SESSIONS</div>
+              <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Active Concurrent Sessions</div>
               <div className="text-3xl font-bold font-display text-white mt-1.5">{sessions.length}</div>
               <div className="flex items-center justify-between text-[10px] text-indigo-400 font-mono mt-1">
                 <span>Timeout: {sessionTimeoutMinutes} min</span>
@@ -814,7 +816,7 @@ export default function BusinessSecurityEngine({
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4.5">
-              <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">LOCKED DIRECTORY ACCOUNTS</div>
+              <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Locked Directory Accounts</div>
               <div className="text-3xl font-bold font-display text-red-400 mt-1.5">
                 {users.filter(u => u.status === 'Locked').length}
               </div>
@@ -825,7 +827,7 @@ export default function BusinessSecurityEngine({
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4.5">
-              <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">CRITICAL COMPLIANCE ALERTS</div>
+              <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Critical Compliance Alerts</div>
               <div className="text-3xl font-bold font-display text-amber-400 mt-1.5">
                 {policies.filter(p => p.status !== 'Compliant').length}
               </div>
@@ -846,10 +848,10 @@ export default function BusinessSecurityEngine({
                 <div className="flex items-center justify-between border-b border-slate-800/60 pb-3">
                   <h4 className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
                     <ShieldAlert className="w-4 h-4 text-red-400" />
-                    ACCESS CONTROL AUDIT
+                    Access Control Audit
                   </h4>
                   <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
-                    LIVE
+                    Live
                   </span>
                 </div>
 
@@ -857,7 +859,7 @@ export default function BusinessSecurityEngine({
                   <div className="p-3 bg-red-950/20 border border-red-500/20 rounded-xl flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
                     <div>
-                      <h5 className="text-xs font-bold text-white">FAILED LOGIN ATTACK DETECTED</h5>
+                      <h5 className="text-xs font-bold text-white">Failed Login Attack Detected</h5>
                       <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
                         IP address <span className="font-mono text-red-300">10.14.85.112</span> failed 5 sequential attempts accessing <span className="text-slate-300">nisha.g@realtyconnect.in</span>. Lockout policy auto-applied.
                       </p>
@@ -873,7 +875,7 @@ export default function BusinessSecurityEngine({
                   <div className="p-3 bg-amber-950/20 border border-amber-500/20 rounded-xl flex items-start gap-3">
                     <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
                     <div>
-                      <h5 className="text-xs font-bold text-white">PRIVILEGED ROLE MODIFICATION</h5>
+                      <h5 className="text-xs font-bold text-white">Privileged Role Modification</h5>
                       <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
                         Administrative access keys were altered for role <span className="font-bold text-slate-300">role-procur-exec</span>.
                       </p>
@@ -884,7 +886,7 @@ export default function BusinessSecurityEngine({
                   <div className="p-3 bg-slate-950/60 border border-slate-850 rounded-xl flex items-start gap-3">
                     <Key className="w-5 h-5 text-indigo-400 flex-shrink-0 mt-0.5" />
                     <div>
-                      <h5 className="text-xs font-bold text-white">TEMPORARY AUTHORIZATION</h5>
+                      <h5 className="text-xs font-bold text-white">Temporary Authorization</h5>
                       <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
                         Temporary access was provisioned for external developer to trace logistics APIs. Expiring shortly.
                       </p>
@@ -906,7 +908,7 @@ export default function BusinessSecurityEngine({
                   <div>
                     <h4 className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
                       <Terminal className="w-4 h-4 text-indigo-400" />
-                      COMPLIANCE DATA CHANGES & REAL-TIME LOGS
+                      Compliance Data Changes & Real-Time Logs
                     </h4>
                     <p className="text-[10px] text-slate-500 font-mono mt-0.5">Tracking previous vs current value updates to assure LOG-01 regulations</p>
                   </div>
@@ -930,15 +932,15 @@ export default function BusinessSecurityEngine({
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-2 py-1 font-mono text-xs">
                         <div>
-                          <span className="text-[9px] text-slate-500 block uppercase">MODIFIED FIELD</span>
+                          <span className="text-[9px] text-slate-500 block uppercase">Modified Field</span>
                           <span className="text-slate-200 font-semibold">{change.field}</span>
                         </div>
                         <div>
-                          <span className="text-[9px] text-red-500 block uppercase">PREVIOUS VALUE</span>
+                          <span className="text-[9px] text-red-500 block uppercase">Previous Value</span>
                           <span className="text-red-400 bg-red-500/5 px-1 rounded line-through border border-red-500/10 block mt-0.5 truncate">{change.prevValue}</span>
                         </div>
                         <div>
-                          <span className="text-[9px] text-emerald-500 block uppercase">UPDATED VALUE</span>
+                          <span className="text-[9px] text-emerald-500 block uppercase">Updated Value</span>
                           <span className="text-emerald-400 bg-emerald-500/5 px-1 rounded border border-emerald-500/10 block mt-0.5 font-bold truncate">{change.newValue}</span>
                         </div>
                       </div>
@@ -977,7 +979,7 @@ export default function BusinessSecurityEngine({
 
 
       {/* ==========================================
-          TAB 2: USER DIRECTORY & ACCESS MANAGEMENT
+          Tab 2: User Directory & Access Management
          ========================================== */}
       {activeTab === 'users' && (
         <div className="space-y-6" id="user-directory-tab">
@@ -1048,7 +1050,7 @@ export default function BusinessSecurityEngine({
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-850 flex justify-between items-center bg-slate-900/60">
               <h4 className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest">
-                ACTIVE ENTERPRISE SECURITY USERS ({filteredUsers.length})
+                Active Enterprise Security Users ({filteredUsers.length})
               </h4>
               <span className="text-[10px] font-mono text-slate-500">Click actions to test failed logins or locks</span>
             </div>
@@ -1169,7 +1171,7 @@ export default function BusinessSecurityEngine({
 
                 <form onSubmit={handleAddUserSubmit} className="space-y-4 text-xs">
                   <div>
-                    <label className="block text-slate-400 font-mono mb-1">FULL NAME</label>
+                    <label className="block text-slate-400 font-mono mb-1">Full Name</label>
                     <input 
                       type="text"
                       placeholder="e.g. Ramesh Kumar"
@@ -1180,7 +1182,7 @@ export default function BusinessSecurityEngine({
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 font-mono mb-1">EMAIL ADDRESS</label>
+                    <label className="block text-slate-400 font-mono mb-1">Email Address</label>
                     <input 
                       type="email"
                       placeholder="e.g. ramesh.k@realtyconnect.in"
@@ -1192,7 +1194,7 @@ export default function BusinessSecurityEngine({
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-slate-400 font-mono mb-1">INITIAL ROLE</label>
+                      <label className="block text-slate-400 font-mono mb-1">Initial Role</label>
                       <select 
                         value={newUser.role}
                         onChange={(e) => setNewUser(prev => ({ ...prev, role: e.target.value }))}
@@ -1207,7 +1209,7 @@ export default function BusinessSecurityEngine({
                     </div>
 
                     <div>
-                      <label className="block text-slate-400 font-mono mb-1">DEPARTMENT</label>
+                      <label className="block text-slate-400 font-mono mb-1">Department</label>
                       <select 
                         value={newUser.department}
                         onChange={(e) => setNewUser(prev => ({ ...prev, department: e.target.value }))}
@@ -1258,13 +1260,13 @@ export default function BusinessSecurityEngine({
 
                 <form onSubmit={handleGrantTempAccess} className="space-y-4 text-xs">
                   <div>
-                    <span className="text-slate-400 font-mono block">ESCALATING USER:</span>
+                    <span className="text-slate-400 font-mono block">Escalating User:</span>
                     <strong className="text-slate-100 text-sm">{selectedUserForTemp.name}</strong>
                     <span className="text-[10px] text-slate-500 block mt-0.5">{selectedUserForTemp.email}</span>
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 font-mono mb-1">TEMPORARY EXPIRY DURATION</label>
+                    <label className="block text-slate-400 font-mono mb-1">Temporary Expiry Duration</label>
                     <select 
                       value={tempDuration}
                       onChange={(e) => setTempDuration(e.target.value)}
@@ -1307,7 +1309,7 @@ export default function BusinessSecurityEngine({
 
 
       {/* ==========================================
-          TAB 3: ROLE & PERMISSION MATRIX
+          Tab 3: Role & Permission Matrix
          ========================================== */}
       {activeTab === 'roles' && (
         <div className="space-y-6" id="role-matrix-tab">
@@ -1317,7 +1319,7 @@ export default function BusinessSecurityEngine({
             <div className="space-y-1">
               <h4 className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
                 <SlidersHorizontal className="w-4 h-4 text-indigo-400" />
-                ROLE VS MODULE EXPLICIT PRIVILEGES
+                Role vs Module Explicit Privileges
               </h4>
               <p className="text-[10px] text-slate-500 font-mono">Configure specific permissions across all corporate tools instantly</p>
             </div>
@@ -1338,7 +1340,7 @@ export default function BusinessSecurityEngine({
             {/* Roles Selection Drawer & Cloning Panel */}
             <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
               <h5 className="text-xs font-mono font-bold text-slate-300 uppercase border-b border-slate-850 pb-2">
-                ACTIVE PRIVILEGE BLUEPRINTS
+                Active Privilege Blueprints
               </h5>
 
               <div className="space-y-3">
@@ -1403,7 +1405,7 @@ export default function BusinessSecurityEngine({
               <div>
                 <div className="flex items-center justify-between border-b border-slate-850 pb-3 flex-wrap gap-2">
                   <div>
-                    <span className="text-[9px] font-mono text-slate-500 uppercase font-bold">MUTATING PRIVILEGES OF:</span>
+                    <span className="text-[9px] font-mono text-slate-500 uppercase font-bold">Mutating Privileges of:</span>
                     <h5 className="text-sm font-bold text-indigo-400 font-display">
                       {roles.find(r => r.id === activeMatrixRole)?.name || 'Default Role'}
                     </h5>
@@ -1414,13 +1416,13 @@ export default function BusinessSecurityEngine({
                       onClick={() => handleBulkPermissionAssignment(activeMatrixRole, true)}
                       className="px-2.5 py-1 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-emerald-400 hover:text-emerald-300 rounded text-[10px] font-mono font-bold cursor-pointer"
                     >
-                      ALLOW ALL
+                      Allow All
                     </button>
                     <button
                       onClick={() => handleBulkPermissionAssignment(activeMatrixRole, false)}
                       className="px-2.5 py-1 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-red-400 hover:text-red-300 rounded text-[10px] font-mono font-bold cursor-pointer"
                     >
-                      DENY ALL
+                      Deny All
                     </button>
                   </div>
                 </div>
@@ -1505,7 +1507,7 @@ export default function BusinessSecurityEngine({
 
                 <form onSubmit={handleAddRoleSubmit} className="space-y-4 text-xs">
                   <div>
-                    <label className="block text-slate-400 font-mono mb-1">ROLE ALIAS / CODE</label>
+                    <label className="block text-slate-400 font-mono mb-1">Role Alias / Code</label>
                     <input 
                       type="text"
                       placeholder="e.g. Audit Assessor"
@@ -1516,7 +1518,7 @@ export default function BusinessSecurityEngine({
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 font-mono mb-1">ROLE FUNCTIONAL DESCRIPTION</label>
+                    <label className="block text-slate-400 font-mono mb-1">Role Functional Description</label>
                     <textarea 
                       placeholder="Functional description of role responsibilities..."
                       rows={3}
@@ -1555,7 +1557,7 @@ export default function BusinessSecurityEngine({
 
 
       {/* ==========================================
-          TAB 4: SESSIONS & AUTHENTICATION POLICIES
+          Tab 4: Sessions & Authentication Policies
          ========================================== */}
       {activeTab === 'sessions' && (
         <div className="space-y-6" id="sessions-auth-tab">
@@ -1567,7 +1569,7 @@ export default function BusinessSecurityEngine({
               <div className="flex items-center justify-between border-b border-slate-850 pb-3">
                 <div>
                   <h4 className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest">
-                    ACTIVE CONCURRENT SESSIONS
+                    Active Concurrent Sessions
                   </h4>
                   <p className="text-[10px] text-slate-500 font-mono mt-0.5">Forcibly evict inactive sessions to meet security policy limit</p>
                 </div>
@@ -1610,7 +1612,7 @@ export default function BusinessSecurityEngine({
 
               <div className="pt-4 border-t border-slate-850 grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1">SESSION TIMEOUT PERIOD (MINS)</label>
+                  <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1">Session Timeout Period (Mins)</label>
                   <input 
                     type="number"
                     min={5}
@@ -1621,7 +1623,7 @@ export default function BusinessSecurityEngine({
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1">CONCURRENT LIMIT PER USER</label>
+                  <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1">Concurrent Limit per User</label>
                   <input 
                     type="number"
                     min={1}
@@ -1640,10 +1642,10 @@ export default function BusinessSecurityEngine({
               <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
                 <h4 className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
                   <Settings className="w-4 h-4 text-indigo-400" />
-                  AUTHENTICATION POLICY
+                  Authentication Policy
                 </h4>
                 <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 rounded border border-emerald-500/15">
-                  REGULATORY READY
+                  Regulatory Ready
                 </span>
               </div>
 
@@ -1653,7 +1655,7 @@ export default function BusinessSecurityEngine({
                 <div className="space-y-1">
                   <div className="flex justify-between font-mono text-[10px] text-slate-400">
                     <span>MINIMUM PASSWORD LENGTH</span>
-                    <span className="text-indigo-400 font-bold">{passwordMinLength} CHARACTERS</span>
+                    <span className="text-indigo-400 font-bold">{passwordMinLength} Characters</span>
                   </div>
                   <input 
                     type="range"
@@ -1700,7 +1702,7 @@ export default function BusinessSecurityEngine({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1">PASSWORD EXPIRY (DAYS)</label>
+                    <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1">Password Expiry (Days)</label>
                     <select 
                       value={pwdExpiryDays}
                       onChange={(e) => setPwdExpiryDays(Number(e.target.value))}
@@ -1714,7 +1716,7 @@ export default function BusinessSecurityEngine({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1">BRUTE FORCE LIMIT LOCK</label>
+                    <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1">Brute Force Limit Lock</label>
                     <select 
                       value={bruteForceLockout}
                       onChange={(e) => setBruteForceLockout(Number(e.target.value))}
@@ -1730,7 +1732,7 @@ export default function BusinessSecurityEngine({
                 {/* Placeholders UI for future MFA and trusted devices */}
                 <div className="p-3 bg-slate-950 rounded-xl border border-slate-850 space-y-2">
                   <span className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
-                    UPCOMING ROADMAP SECURITY
+                    Upcoming Roadmap Security
                   </span>
                   
                   <div className="flex items-center justify-between text-[10.5px]">
@@ -1764,12 +1766,12 @@ export default function BusinessSecurityEngine({
           {/* Access Control scope configuration panel */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
             <h4 className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest border-b border-slate-850 pb-2">
-              EXPLICIT ACCESS CONTROL SCOPES (TENANT & PROJECT LEVEL)
+              Explicit Access Control Scopes (Tenant & Project Level)
             </h4>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-mono">
               <div>
-                <label className="block text-slate-400 mb-1">ORGANIZATION ACCESS</label>
+                <label className="block text-slate-400 mb-1">Organization Access</label>
                 <select value={scopeOrg} onChange={(e) => setScopeOrg(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded p-2 text-white">
                   <option>Multi-Tenant Allowed</option>
                   <option>Strict Single Organization</option>
@@ -1778,7 +1780,7 @@ export default function BusinessSecurityEngine({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">DEPARTMENTAL ACCESS</label>
+                <label className="block text-slate-400 mb-1">Departmental Access</label>
                 <select value={scopeDept} onChange={(e) => setScopeDept(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded p-2 text-white">
                   <option>Local Restriction</option>
                   <option>Global Cross-Dept Auditing</option>
@@ -1787,7 +1789,7 @@ export default function BusinessSecurityEngine({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">PROJECT BOUNDARY RULES</label>
+                <label className="block text-slate-400 mb-1">Project Boundary Rules</label>
                 <select value={scopeProject} onChange={(e) => setScopeProject(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded p-2 text-white">
                   <option>Enforce Workspace Boundary</option>
                   <option>Cross-Project Visibility</option>
@@ -1796,7 +1798,7 @@ export default function BusinessSecurityEngine({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">RECORD PRIVACY MANDATE (UI READY)</label>
+                <label className="block text-slate-400 mb-1">Record Privacy Mandate (UI Ready)</label>
                 <select value={recordAccessRule} onChange={(e) => setRecordAccessRule(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded p-2 text-white">
                   <option>Creator & Compliance Only</option>
                   <option>Unrestricted Team Sharing</option>
@@ -1811,7 +1813,7 @@ export default function BusinessSecurityEngine({
 
 
       {/* ==========================================
-          TAB 5: COMPLIANCE CENTER & POLICY LIBRARY
+          Tab 5: Compliance Center & Policy Library
          ========================================== */}
       {activeTab === 'compliance' && (
         <div className="space-y-6" id="compliance-center-tab">
@@ -1820,13 +1822,13 @@ export default function BusinessSecurityEngine({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2">
-              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">COMPLIANCE HEALTH INDEX</span>
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Compliance Health Index</span>
               <div className="text-3xl font-extrabold text-emerald-400">96.8% Compliant</div>
               <p className="text-[11px] text-slate-400 leading-relaxed">Evaluating security alerts, active locked directory users, and completed policy library reviews.</p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2">
-              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">POLICIES ACKNOWLEDGED</span>
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Policies Acknowledged</span>
               <div className="text-3xl font-extrabold text-white">
                 {policies.filter(p => p.acknowledged).length} / {policies.length} Policies
               </div>
@@ -1834,7 +1836,7 @@ export default function BusinessSecurityEngine({
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2">
-              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">REGULATORY COVERAGE</span>
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Regulatory Coverage</span>
               <div className="text-3xl font-extrabold text-indigo-400">RERA, SOC2, ISO27001</div>
               <p className="text-[11px] text-slate-400 leading-relaxed">Aligned with government RERA data guidelines and corporate financial accountability structures.</p>
             </div>
@@ -1846,11 +1848,11 @@ export default function BusinessSecurityEngine({
             <div className="px-5 py-4 border-b border-slate-850 bg-slate-900/60 flex items-center justify-between">
               <div>
                 <h4 className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest">
-                  COMPLIANCE POLICY LIBRARY & LEGISLATIVE AUDIT SHELF
+                  Compliance Policy Library & Legislative Audit Shelf
                 </h4>
                 <p className="text-[10px] text-slate-500 font-mono mt-0.5">Mandates governing the RealtyConnect™ multi-subsidiary framework</p>
               </div>
-              <span className="text-[10px] font-mono text-slate-400">SYSTEM AUTHORITATIVE</span>
+              <span className="text-[10px] font-mono text-slate-400">System Authoritative</span>
             </div>
 
             <div className="divide-y divide-slate-850">
@@ -1871,15 +1873,15 @@ export default function BusinessSecurityEngine({
                       {/* Status badge */}
                       {p.status === 'Compliant' ? (
                         <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded">
-                          COMPLIANT
+                          Compliant
                         </span>
                       ) : p.status === 'Under Audit' ? (
                         <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded animate-pulse">
-                          UNDER AUDIT
+                          Under Audit
                         </span>
                       ) : (
                         <span className="text-[10px] font-mono font-bold text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded">
-                          PENDING REVIEW
+                          Pending Review
                         </span>
                       )}
 
@@ -1919,7 +1921,7 @@ export default function BusinessSecurityEngine({
 
 
       {/* ==========================================
-          TAB 6: CROSS-MODULE INTEGRATION AUDIT
+          Tab 6: Cross-Module Integration Audit
          ========================================== */}
       {activeTab === 'integrations' && (
         <div className="space-y-6" id="integrations-tab">
@@ -1927,10 +1929,10 @@ export default function BusinessSecurityEngine({
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-2">
             <h4 className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
               <Globe className="w-4 h-4 text-indigo-400" />
-              INTEGRATION ACCESS CONTROL & ACTIVITY HISTORY RECONCILIATION
+              Integration Access Control & Activity History Reconciliation
             </h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Sprint 25 establishes programmatic security middleware mapping all system components back to user permission scopes. Review operational audit logs for each module below.
+              Security rules map every module to user permission scopes. Review the audit log for each module below.
             </p>
           </div>
 
@@ -1941,14 +1943,14 @@ export default function BusinessSecurityEngine({
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <CheckSquare className="w-4 h-4 text-emerald-400" /> Enterprise CRM Audit
                 </span>
-                <span className="text-[9px] font-mono text-slate-500">ACCESS CONTROL RESOLVED</span>
+                <span className="text-[9px] font-mono text-slate-500">Access Control Resolved</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
                 Prevents third-party suppliers from browsing private buyer leads or sales pipelines. Maintains a localized account interaction log.
               </p>
               <div className="bg-slate-950 p-2 rounded text-[10px] font-mono text-slate-500 flex justify-between">
                 <span>Rule Code: CRM-SEC-01</span>
-                <span className="text-emerald-400">PASSED CHECK</span>
+                <span className="text-emerald-400">Passed Check</span>
               </div>
             </div>
 
@@ -1957,14 +1959,14 @@ export default function BusinessSecurityEngine({
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <CheckSquare className="w-4 h-4 text-emerald-400" /> Procurement Bid Security
                 </span>
-                <span className="text-[9px] font-mono text-slate-500">BLIND BIDDING ENFORCED</span>
+                <span className="text-[9px] font-mono text-slate-500">Blind Bidding Enforced</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
                 Secures materials RFQs against backchannel sharing. Logs full history of bid placement, vendor pricing updates, and release of tender details.
               </p>
               <div className="bg-slate-950 p-2 rounded text-[10px] font-mono text-slate-500 flex justify-between">
                 <span>Rule Code: PROC-SEC-04</span>
-                <span className="text-emerald-400">PASSED CHECK</span>
+                <span className="text-emerald-400">Passed Check</span>
               </div>
             </div>
 
@@ -1973,14 +1975,14 @@ export default function BusinessSecurityEngine({
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <CheckSquare className="w-4 h-4 text-emerald-400" /> Finance & Escrow Audits
                 </span>
-                <span className="text-[9px] font-mono text-slate-500">DUAL AUTH REQUIRED</span>
+                <span className="text-[9px] font-mono text-slate-500">Dual Auth Required</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
                 Every escrow billing action requires dual administrator validation. Releases are signed with 64-character SHA-256 block hash references.
               </p>
               <div className="bg-slate-950 p-2 rounded text-[10px] font-mono text-slate-500 flex justify-between">
                 <span>Rule Code: FIN-SEC-02</span>
-                <span className="text-emerald-400">PASSED CHECK</span>
+                <span className="text-emerald-400">Passed Check</span>
               </div>
             </div>
 
@@ -1989,14 +1991,14 @@ export default function BusinessSecurityEngine({
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <CheckSquare className="w-4 h-4 text-emerald-400" /> Document Vault (DMS) Quarantine
                 </span>
-                <span className="text-[9px] font-mono text-slate-500">VIRUS MALWARE CHECK</span>
+                <span className="text-[9px] font-mono text-slate-500">Virus Malware Check</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
                 Uploaded blueprints are quarantined and MD5 checked against threat databases before publishing to the project network workspace.
               </p>
               <div className="bg-slate-950 p-2 rounded text-[10px] font-mono text-slate-500 flex justify-between">
                 <span>Rule Code: DMS-SEC-09</span>
-                <span className="text-emerald-400">PASSED CHECK</span>
+                <span className="text-emerald-400">Passed Check</span>
               </div>
             </div>
 
@@ -2006,7 +2008,7 @@ export default function BusinessSecurityEngine({
             <div className="space-y-1">
               <h5 className="text-xs font-bold text-white font-mono flex items-center gap-1">
                 <Check className="w-4 h-4 text-indigo-400" />
-                SENSITIVE ACTION LOG DELEGATES ACTIVE
+                Sensitive Action Log Delegates Active
               </h5>
               <p className="text-[11.5px] text-indigo-300">
                 Active alerts are routed automatically to compliance officers when failed thresholds or unauthorized accesses occur.
@@ -2029,7 +2031,7 @@ export default function BusinessSecurityEngine({
 
 
       {/* ==========================================
-          DIALOG MODAL: REPORT GENERATOR PREVIEW
+          Dialog Modal: Report Generator Preview
          ========================================== */}
       {activeReportPreview && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -2052,16 +2054,16 @@ export default function BusinessSecurityEngine({
               <div className="border-b-2 border-slate-800 pb-3 flex justify-between items-start">
                 <div>
                   <h3 className="text-sm font-extrabold uppercase font-display text-slate-900">REALTYCONNECT™ B2B GATEWAY</h3>
-                  <p className="text-[9px] text-slate-500 mt-0.5">COMPLIANCE & RISK MANAGEMENT LEDGER OFFICE</p>
+                  <p className="text-[9px] text-slate-500 mt-0.5">Compliance & Risk Management Ledger Office</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[9px] text-slate-500">COMPILED: {new Date().toISOString().replace('T', ' ').substr(0, 16)}</p>
-                  <p className="text-[9px] text-slate-500">REGULATION: LOG-01 / SOC2 TRUST</p>
+                  <p className="text-[9px] text-slate-500">Compiled: {new Date().toISOString().replace('T', ' ').substr(0, 16)}</p>
+                  <p className="text-[9px] text-slate-500">Regulation: Log-01 / SOC2 Trust</p>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <h4 className="font-bold text-slate-800 text-[11px] uppercase underline">REPORT TYPE: {activeReportPreview.toUpperCase()}</h4>
+                <h4 className="font-bold text-slate-800 text-[11px] uppercase underline">Report Type: {activeReportPreview.toUpperCase()}</h4>
                 <p className="text-[10px] text-slate-600 leading-relaxed font-sans">
                   This document serves as an official snapshot of authorization, role definitions, and access configurations. In accordance with RERA Section 4, this ledger is archived securely and is protected against administrative alterations.
                 </p>
@@ -2072,10 +2074,10 @@ export default function BusinessSecurityEngine({
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-100 border-b border-slate-300 font-bold text-[9px]">
-                      <th className="p-2 border-r border-slate-300">USER ID</th>
-                      <th className="p-2 border-r border-slate-300">ASSIGNED ROLE</th>
-                      <th className="p-2 border-r border-slate-300">ACCESS PERMS</th>
-                      <th className="p-2">COMPLIANCE CODE</th>
+                      <th className="p-2 border-r border-slate-300">User ID</th>
+                      <th className="p-2 border-r border-slate-300">Assigned Role</th>
+                      <th className="p-2 border-r border-slate-300">Access Perms</th>
+                      <th className="p-2">Compliance Code</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2083,25 +2085,25 @@ export default function BusinessSecurityEngine({
                       <td className="p-2 border-r border-slate-300 font-bold">devendra.s@realtyconnect.in</td>
                       <td className="p-2 border-r border-slate-300">System Admin</td>
                       <td className="p-2 border-r border-slate-300">60/60 (Full Scope)</td>
-                      <td className="p-2">COMPLIANT (SYS)</td>
+                      <td className="p-2">Compliant (Sys)</td>
                     </tr>
                     <tr className="border-b border-slate-300">
                       <td className="p-2 border-r border-slate-300 font-bold">vikram.r@realtyconnect.in</td>
                       <td className="p-2 border-r border-slate-300">Project Manager</td>
                       <td className="p-2 border-r border-slate-300">35/60 (Proj Limit)</td>
-                      <td className="p-2">COMPLIANT (PRJ)</td>
+                      <td className="p-2">Compliant (Prj)</td>
                     </tr>
                     <tr className="border-b border-slate-300">
                       <td className="p-2 border-r border-slate-300 font-bold">ananya.sen@realtyconnect.in</td>
                       <td className="p-2 border-r border-slate-300">Compliance Officer</td>
                       <td className="p-2 border-r border-slate-300 font-bold">42/60 (Audit Limit)</td>
-                      <td className="p-2">COMPLIANT (AUD)</td>
+                      <td className="p-2">Compliant (Aud)</td>
                     </tr>
                     <tr>
                       <td className="p-2 border-r border-slate-300 font-bold text-red-600">nisha.g@realtyconnect.in</td>
                       <td className="p-2 border-r border-slate-300">Materials Vendor</td>
                       <td className="p-2 border-r border-slate-300 text-slate-500">No active access</td>
-                      <td className="p-2 text-red-600 font-bold">LOCKED - SECURITY ALERT</td>
+                      <td className="p-2 text-red-600 font-bold">Locked - Security Alert</td>
                     </tr>
                   </tbody>
                 </table>

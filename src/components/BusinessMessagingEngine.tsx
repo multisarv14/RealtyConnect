@@ -3,6 +3,8 @@
  * High-fidelity enterprise collaboration platform for the Indian B2B real estate sector.
  */
 
+import { currentUserName } from '../lib/identity';
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, Mail, Phone, Globe, ShieldCheck, Pin, Archive, Trash2, Edit2, Copy, 
@@ -419,10 +421,10 @@ export default function BusinessMessagingEngine({
   showToast,
   setActiveViewMode
 }: BusinessMessagingEngineProps) {
-  // Main Conversations State loaded from localStorage or seeded
+  // Main Conversations State loaded from appStore or seeded
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_conversations');
+      const saved = appStore.getItem('realtyconnect_conversations');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return DEFAULT_CONVERSATIONS;
@@ -457,7 +459,7 @@ export default function BusinessMessagingEngine({
   // Enterprise meetings local state
   const [enterpriseMeetings, setEnterpriseMeetings] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_meetings');
+      const saved = appStore.getItem('realtyconnect_meetings');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return [];
@@ -466,7 +468,7 @@ export default function BusinessMessagingEngine({
   useEffect(() => {
     const syncMeetings = () => {
       try {
-        const saved = localStorage.getItem('realtyconnect_meetings');
+        const saved = appStore.getItem('realtyconnect_meetings');
         if (saved) {
           setEnterpriseMeetings(JSON.parse(saved));
         } else {
@@ -494,7 +496,7 @@ export default function BusinessMessagingEngine({
   const saveConversations = (updated: Conversation[]) => {
     setConversations(updated);
     try {
-      localStorage.setItem('realtyconnect_conversations', JSON.stringify(updated));
+      appStore.setItem('realtyconnect_conversations', JSON.stringify(updated));
     } catch (e) {
       console.error('Error saving conversations', e);
     }
@@ -509,7 +511,7 @@ export default function BusinessMessagingEngine({
   useEffect(() => {
     const checkActiveRouting = () => {
       try {
-        const routeId = localStorage.getItem('realtyconnect_active_conversation_id');
+        const routeId = appStore.getItem('realtyconnect_active_conversation_id');
         if (routeId) {
           // Find if conversation exists
           const exists = conversations.some(c => c.id === routeId);
@@ -524,7 +526,7 @@ export default function BusinessMessagingEngine({
             });
             saveConversations(updated);
           }
-          localStorage.removeItem('realtyconnect_active_conversation_id');
+          appStore.removeItem('realtyconnect_active_conversation_id');
         }
       } catch (e) {}
     };
@@ -613,7 +615,7 @@ export default function BusinessMessagingEngine({
           }
           return c;
         });
-        localStorage.setItem('realtyconnect_conversations', JSON.stringify(updated));
+        appStore.setItem('realtyconnect_conversations', JSON.stringify(updated));
         return updated;
       });
     }, 1200);
@@ -630,7 +632,7 @@ export default function BusinessMessagingEngine({
           }
           return c;
         });
-        localStorage.setItem('realtyconnect_conversations', JSON.stringify(updated));
+        appStore.setItem('realtyconnect_conversations', JSON.stringify(updated));
         return updated;
       });
 
@@ -762,7 +764,7 @@ export default function BusinessMessagingEngine({
   // Collect all unique executives, types, and categories for dropdown filters
   const conversationTypes = ['All Types', 'Direct Business', 'Lead Discussion', 'Marketplace Enquiry', 'RFQ Discussion', 'Opportunity Discussion', 'Partnership Discussion'];
   const businessCategories = ['All Categories', 'Developers', 'Contractors', 'Suppliers', 'Government'];
-  const executives = ['All Executives', 'Vikram Malhotra', 'Neha Sharma', 'Unassigned'];
+  const executives = ['All Executives', currentUserName(), 'Neha Sharma', 'Unassigned'];
 
   // Total Unread KPI
   const totalUnreadCount = conversations.reduce((acc, c) => acc + (c.archived ? 0 : c.unreadCount), 0);
@@ -782,7 +784,7 @@ export default function BusinessMessagingEngine({
               <h2 className="font-display font-bold text-base text-slate-100 flex items-center gap-2">
                 Business Messaging & Collaboration Workspace
                 <span className="bg-indigo-500/15 text-indigo-400 text-[10px] font-mono px-2 py-0.5 rounded-full border border-indigo-500/20 font-bold uppercase">
-                  Sprint 14 Active
+                  Messaging
                 </span>
               </h2>
               <p className="text-[10px] text-slate-400">Secure corporate messaging hub for certified vendors, constructors, and developers.</p>
@@ -1072,7 +1074,7 @@ export default function BusinessMessagingEngine({
                 <div className="bg-indigo-950/20 border-b border-slate-850 px-4 py-2 flex items-center justify-between text-[10px] text-slate-300 shrink-0">
                   <div className="flex items-center gap-1.5 truncate">
                     <span className="font-mono bg-indigo-500/10 text-indigo-400 px-1 rounded font-bold uppercase tracking-wider text-[8px]">
-                      LINKED {activeConv.relatedEntity.type}
+                      Linked {activeConv.relatedEntity.type}
                     </span>
                     <span className="text-slate-400 font-mono">[{activeConv.relatedEntity.id}]</span>
                     <span className="truncate font-semibold text-slate-200">{activeConv.relatedEntity.title}</span>
@@ -1088,8 +1090,8 @@ export default function BusinessMessagingEngine({
                         };
                         const target = viewMap[activeConv.relatedEntity!.type];
                         if (target) {
-                          // Seed entity routing in localStorage
-                          localStorage.setItem(`realtyconnect_route_${activeConv.relatedEntity!.type.toLowerCase()}_id`, activeConv.relatedEntity!.id);
+                          // Seed entity routing in appStore
+                          appStore.setItem(`realtyconnect_route_${activeConv.relatedEntity!.type.toLowerCase()}_id`, activeConv.relatedEntity!.id);
                           setActiveViewMode(target);
                           showToast(`Routing to linked ${activeConv.relatedEntity!.type} context.`, 'info');
                         }
@@ -1270,7 +1272,7 @@ export default function BusinessMessagingEngine({
               {replyingToMessage && (
                 <div className="bg-slate-900 border-t border-slate-850 px-4 py-2 flex items-center justify-between text-[10px] text-slate-400">
                   <div className="flex items-center gap-1.5 truncate">
-                    <span className="font-mono text-indigo-400 font-bold uppercase text-[8px]">REPLY TO</span>
+                    <span className="font-mono text-indigo-400 font-bold uppercase text-[8px]">Reply to</span>
                     <span className="truncate font-semibold text-slate-200">"{replyingToMessage.text}"</span>
                   </div>
                   <button onClick={() => setReplyingToMessage(null)} className="text-slate-500 hover:text-white">
@@ -1314,7 +1316,7 @@ export default function BusinessMessagingEngine({
                     {/* Simulated File List selection */}
                     <div className="absolute bottom-full left-0 mb-2 w-64 bg-slate-900 border border-slate-800 rounded-xl shadow-xl p-2 hidden group-hover:block hover:block z-50 animate-fade-in text-[10px]">
                       <div className="p-1.5 border-b border-slate-800 font-mono font-bold text-slate-400 uppercase text-[8px]">
-                        Corporate Procurement Vault (Sprint 14 Mock)
+                        Document vault (sample files)
                       </div>
                       <div className="space-y-1 mt-1.5">
                         {MOCK_ATTACHMENTS.map((f, i) => (
@@ -1373,7 +1375,7 @@ export default function BusinessMessagingEngine({
               <Folder className="w-3.5 h-3.5 text-indigo-400" />
               Context Intelligence
             </h4>
-            <p className="text-[8.5px] text-slate-500 font-mono">B2B NEGOTIATION RECORDS</p>
+            <p className="text-[8.5px] text-slate-500 font-mono">B2B Negotiation Records</p>
           </div>
 
           {activeConv ? (
@@ -1403,7 +1405,7 @@ export default function BusinessMessagingEngine({
                   <button 
                     onClick={() => {
                       if (setActiveViewMode) {
-                        localStorage.setItem('realtyconnect_active_profile_id', activeConv.companyId);
+                        appStore.setItem('realtyconnect_active_profile_id', activeConv.companyId);
                         setActiveViewMode('directory');
                         showToast(`Loading company profile for ${activeConv.companyName}`, 'info');
                       }
@@ -1496,8 +1498,8 @@ export default function BusinessMessagingEngine({
                       key={meet.id || idx}
                       onClick={() => {
                         if (setActiveViewMode) {
-                          // View meeting details by setting selected meeting in localStorage
-                          localStorage.setItem('realtyconnect_selected_meeting_id', meet.id);
+                          // View meeting details by setting selected meeting in appStore
+                          appStore.setItem('realtyconnect_selected_meeting_id', meet.id);
                           setActiveViewMode('meetings');
                           showToast(`Opening meeting details: ${meet.title}`, 'info');
                         }
@@ -1545,7 +1547,7 @@ export default function BusinessMessagingEngine({
                         priority: 'High',
                         agenda: `Direct sourcing/procurement negotiation concerning ${activeConv.conversationType} collaboration.`
                       };
-                      localStorage.setItem('realtyconnect_prefill_meeting', JSON.stringify(prefillData));
+                      appStore.setItem('realtyconnect_prefill_meeting', JSON.stringify(prefillData));
                       setActiveViewMode('meetings');
                       showToast(`Configuring enterprise meeting prefill for ${activeConv.companyName}`, 'success');
                     }

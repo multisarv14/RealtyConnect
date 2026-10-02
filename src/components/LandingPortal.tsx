@@ -3,6 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { appStore } from '../lib/appStore';
+import { usePersistentState } from '../lib/usePersistentState';
+import { errorMessage, type AuthMeta, type RegisterInput, type Session } from '../lib/api';
+import { fetchCompanies, isRegisteredCompanyId } from '../lib/companies';
+import { currentOrgName, currentUserEmail, currentUserName } from '../lib/identity';
+import type { Company } from './BusinessDirectory';
+import { passwordPolicyError } from '../../shared/roles';
 import React, { useState } from 'react';
 import { FeedPost, INITIAL_POSTS } from './BusinessFeed';
 import { INITIAL_OPPORTUNITIES } from './BusinessOpportunitiesEngine';
@@ -114,38 +121,38 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     items: [
       { id: 'dashboard', label: 'Control Center', icon: LayoutDashboard },
       { id: 'directory', label: 'B2B Directory', icon: Search },
-      { id: 'feed', label: 'Business Feed', icon: MessageSquare, badge: { text: 'NEW', variant: 'new' } }
+      { id: 'feed', label: 'Business Feed', icon: MessageSquare }
     ]
   },
   {
     groupName: 'Communication',
     items: [
-      { id: 'network_dashboard', label: 'Networking Hub', icon: Users, badge: { text: 'LIVE', variant: 'beta' } },
-      { id: 'messaging', label: 'B2B Messaging', icon: MessageSquare, badge: { text: 'NEW', variant: 'new' } },
-      { id: 'meetings', label: 'Meetings & Calendar', icon: Calendar, badge: { text: 'NEW', variant: 'new' } }
+      { id: 'network_dashboard', label: 'Networking Hub', icon: Users },
+      { id: 'messaging', label: 'B2B Messaging', icon: MessageSquare },
+      { id: 'meetings', label: 'Meetings & Calendar', icon: Calendar }
     ]
   },
   {
     groupName: 'Operations',
     items: [
       { id: 'opportunities', label: 'B2B Opportunities', icon: Briefcase },
-      { id: 'rfq_management', label: 'RFQ & Tenders', icon: FileText, badge: { text: 'BETA', variant: 'beta' } },
-      { id: 'projects', label: 'Project Portfolio', icon: Layers, badge: { text: 'SPRINT 17', variant: 'new' } },
-      { id: 'procurement', label: 'Procurement Engine', icon: ClipboardList, badge: { text: 'SPRINT 18', variant: 'new' } },
-      { id: 'inventory', label: 'Inventory Engine', icon: Layers, badge: { text: 'SPRINT 19', variant: 'new' } },
-      { id: 'finance', label: 'Finance & Billing', icon: DollarSign, badge: { text: 'SPRINT 20', variant: 'new' } },
-      { id: 'assets_maintenance', label: 'Assets & Maintenance', icon: Wrench, badge: { text: 'SPRINT 22', variant: 'new' } }
+      { id: 'rfq_management', label: 'RFQ & Tenders', icon: FileText },
+      { id: 'projects', label: 'Project Portfolio', icon: Layers },
+      { id: 'procurement', label: 'Procurement Engine', icon: ClipboardList },
+      { id: 'inventory', label: 'Inventory Engine', icon: Layers },
+      { id: 'finance', label: 'Finance & Billing', icon: DollarSign },
+      { id: 'assets_maintenance', label: 'Assets & Maintenance', icon: Wrench }
     ]
   },
   {
     groupName: 'Management',
     items: [
-      { id: 'marketplace', label: 'B2B Marketplace', icon: ShoppingBag, badge: { text: 'HOT', variant: 'soon' } },
-      { id: 'lead_management', label: 'Lead Management', icon: ClipboardList, badge: { text: '9+', variant: 'count' } },
-      { id: 'crm', label: 'Enterprise CRM', icon: Building2, badge: { text: 'NEW', variant: 'new' } },
-      { id: 'hr_dms', label: 'HR & Documents (DMS)', icon: Users, badge: { text: 'SPRINT 21', variant: 'new' } },
-      { id: 'analytics_subscription', label: 'Analytics & Subscriptions', icon: BarChart2, badge: { text: 'SPRINT 23', variant: 'new' } },
-      { id: 'security_compliance', label: 'Security & Compliance', icon: Shield, badge: { text: 'SPRINT 25', variant: 'new' } }
+      { id: 'marketplace', label: 'B2B Marketplace', icon: ShoppingBag },
+      { id: 'lead_management', label: 'Lead Management', icon: ClipboardList },
+      { id: 'crm', label: 'Enterprise CRM', icon: Building2 },
+      { id: 'hr_dms', label: 'HR & Documents (DMS)', icon: Users },
+      { id: 'analytics_subscription', label: 'Analytics & Subscriptions', icon: BarChart2 },
+      { id: 'security_compliance', label: 'Security & Compliance', icon: Shield }
     ]
   }
 ];
@@ -165,29 +172,34 @@ const DEFAULT_LOGGED_IN_MODULES: NavItem['id'][] = ['dashboard', 'directory', 'f
 
 interface LandingPortalProps {
   onLogTriggered: (action: string, entity: string, entityId: string, status: 'SUCCESS' | 'FAILURE' | 'WARNING', details: string) => void;
-  userSession: { 
-    email: string; 
-    role: string; 
-    permissions: string[]; 
-    subscriptionPlan?: string; 
-    organizationName?: string; 
-    reraRegistration?: string; 
-  } | null;
+  userSession: Session | null;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   onToggleDevHub: () => void;
   onStartOnboarding: () => void;
   isLightMode?: boolean;
   onToggleTheme?: () => void;
   onLogout?: () => void;
-  onLogin?: (
-    email: string, 
-    role: string, 
-    permissions: string[], 
-    subscriptionPlan?: string, 
-    organizationName?: string, 
-    reraRegistration?: string
-  ) => void;
+  // Both reject when the server refuses the request; errorMessage() turns that into user-facing text.
+  onLogin?: (email: string, password: string, role: string | undefined, landingView: string) => Promise<void>;
+  onRegister?: (input: RegisterInput, landingView: string) => Promise<void>;
+  authMeta?: AuthMeta | null;
+  initialViewMode?: string;
+  // The session's company details changed on the server (e.g. the company was renamed).
+  onSessionStale?: () => void;
 }
+
+const SIGNUP_ROLE_LABELS: Record<string, string> = {
+  BUILDER: 'Builder / Developer',
+  DEVELOPER: 'Real Estate Developer',
+  CONSTRUCTION_CO: 'Construction Company',
+  CONTRACTOR: 'Civil Sub-Contractor',
+  MATERIAL_SUPPLIER: 'Material Supplier / Vendor',
+  ARCHITECT: 'Architect',
+  CONSULTANT: 'Legal & Liaison Consultant',
+  BANK: 'Syndicate Banker / Financer',
+  RECRUITER: 'Enterprise Talent Recruiter',
+  FACILITY_MANAGEMENT: 'Assets & Facility Manager'
+};
 
 // Rich mock data to support high-fidelity business discovery
 const DISCOVERY_REGISTRY = [
@@ -344,13 +356,51 @@ export default function LandingPortal({
   isLightMode = false,
   onToggleTheme,
   onLogout,
-  onLogin
+  onLogin,
+  onRegister,
+  authMeta,
+  initialViewMode,
+  onSessionStale
 }: LandingPortalProps) {
+  // Companies registered on the platform. The bundled sample companies are added only in demo mode.
+  const [registeredCompanies, setRegisteredCompanies] = useState<Company[]>([]);
+  const reloadCompanies = React.useCallback(() => {
+    fetchCompanies()
+      .then(setRegisteredCompanies)
+      .catch(err => showToast(errorMessage(err), 'error'));
+  }, [showToast]);
+  React.useEffect(() => {
+    reloadCompanies();
+  }, [reloadCompanies]);
+
+  const companyRegistry = React.useMemo(() => {
+    const registered = registeredCompanies.map(c => ({
+      id: c.id,
+      name: c.name,
+      category: c.category,
+      location: [c.city, c.state].filter(Boolean).join(', '),
+      description: c.description || c.shortDescription,
+      established: c.established,
+      projectsCount: c.projects?.length ?? 0,
+      rating: c.rating ? String(c.rating) : 'New',
+      featuredProject: c.projects?.[0] ?? '',
+      website: '',
+      specialty: c.shortDescription,
+      verified: c.verified,
+      logoBg: c.logoBg,
+      tags: [...c.products, ...c.services, ...c.keywords].slice(0, 6)
+    }));
+    return [...registered, ...(authMeta?.demoMode ? DISCOVERY_REGISTRY : [])];
+  }, [registeredCompanies, authMeta?.demoMode]);
+
   // Discovery State
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedLocation, setSelectedLocation] = useState('All');
-  const [searchResults, setSearchResults] = useState(DISCOVERY_REGISTRY);
+  const [searchResults, setSearchResults] = useState<typeof DISCOVERY_REGISTRY>([]);
+  React.useEffect(() => {
+    setSearchResults(companyRegistry);
+  }, [companyRegistry]);
 
   // Ecosystem Guide State
   const [isGuideCollapsed, setIsGuideCollapsed] = useState(false);
@@ -407,50 +457,21 @@ export default function LandingPortal({
     }
   ];
 
-  const handleQuickLogin = (email: string, role: string, permissions: string[], defaultView: any) => {
-    let subPlan = 'Standard Free';
-    let orgName = 'Independent Professional';
-    let reraReg = 'N/A';
-
-    if (role === 'BUILDER' || role === 'DEVELOPER') {
-      subPlan = 'Platinum Developer';
-      orgName = 'Apex Developers Ltd';
-      reraReg = 'RERA-MH-90432';
-    } else if (role === 'CONTRACTOR') {
-      subPlan = 'Gold Contractor License';
-      orgName = 'Vanguard Civil Works';
-      reraReg = 'RERA-KA-11029';
-    } else if (role === 'MATERIAL_SUPPLIER' || role === 'VENDOR') {
-      subPlan = 'Commercial Sourcing Pro';
-      orgName = 'Sai Materials & Aggregates';
-    } else if (role === 'CONSULTANT') {
-      subPlan = 'Executive Legal Advisor';
-      orgName = 'RERA Compliance Consultants';
-      reraReg = 'RERA-DL-80431';
-    } else if (role === 'BANK' || role === 'NBFC') {
-      subPlan = 'Syndicate Finance Tier 1';
-      orgName = 'State Capital Funding Syndicate';
-    } else if (role === 'RECRUITER') {
-      subPlan = 'Enterprise Talent Suite';
-      orgName = 'Manpower RealEstate Ltd';
-    } else if (role === 'ADMIN') {
-      subPlan = 'System Audit Root';
-      orgName = 'Regulatory Authority Directorate';
+  const handleQuickLogin = async (email: string, role: string, defaultView: string) => {
+    // Demo personas (and their shared password) only exist on servers running in demo mode.
+    if (!onLogin || !authMeta?.demoMode || !authMeta.demoPassword) {
+      setAuthEmail(email);
+      setAuthPassword('');
+      setAuthError('');
+      setAuthDefaultView(defaultView);
+      setAuthModalTab('signin');
+      setIsAuthModalOpen(true);
+      return;
     }
-
-    if (onLogin) {
-      onLogin(email, role, permissions, subPlan, orgName, reraReg);
-      setActiveViewMode(defaultView);
-      showToast(`Logged in successfully as ${role}. Workspace activated.`, 'success');
-      onLogTriggered(
-        'AUTH_LOGIN_SUCCESS',
-        'users',
-        email,
-        'SUCCESS',
-        `Interactive Quick-Start: Logged in as ${role}. Swapped current view context to: ${defaultView}.`
-      );
-    } else {
-      showToast('Login handler not configured.', 'error');
+    try {
+      await onLogin(email, authMeta.demoPassword, role, defaultView);
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
@@ -466,6 +487,14 @@ export default function LandingPortal({
 
   // Modal / Interaction State
   const [selectedBusiness, setSelectedBusiness] = useState<typeof DISCOVERY_REGISTRY[0] | null>(null);
+
+  /** Opens the profile of a company registered on the platform. Returns false for sample-company ids. */
+  const openRegisteredCompany = (id: string): boolean => {
+    if (!isRegisteredCompanyId(id)) return false;
+    const company = companyRegistry.find(c => c.id === id);
+    setSelectedBusiness((company ?? { id, name: '', category: '', location: '' }) as any);
+    return true;
+  };
   const [recommendationText, setRecommendationText] = useState('');
   const [recommendationList, setRecommendationList] = useState<{ [key: string]: string[] }>({
     'ent-1': ['Highly organized team. Exceptional engineering compliance and clear RERA disclosures.'],
@@ -474,27 +503,23 @@ export default function LandingPortal({
 
   // B2B Connection state - Refactored as full Sprint 06 Enterprise State Machine
   const [activeViewMode, setActiveViewMode] = useState<'home' | 'directory' | 'network_dashboard' | 'feed' | 'dashboard' | 'opportunities' | 'rfq_management' | 'marketplace' | 'lead_management' | 'messaging' | 'meetings' | 'crm' | 'projects' | 'procurement' | 'inventory' | 'finance' | 'hr_dms' | 'assets_maintenance' | 'analytics_subscription' | 'security_compliance'>(() => {
-    return userSession ? 'dashboard' : 'home';
+    // The portal is remounted whenever the session changes (see App), so this initial value is the only sync needed.
+    return userSession ? ((initialViewMode as any) || 'dashboard') : 'home';
   });
-
-  // Sync view mode automatically on login/logout state change
-  React.useEffect(() => {
-    setActiveViewMode(userSession ? 'dashboard' : 'home');
-  }, [userSession]);
 
   // Smart Navigation Left Sidebar States (Part 4)
   const [pinnedModules, setPinnedModules] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_pinned_modules');
-      return saved ? JSON.parse(saved) : ['dashboard', 'projects', 'rfq_management'];
+      const saved = appStore.getItem('realtyconnect_pinned_modules');
+      return saved ? JSON.parse(saved) : [];
     } catch (e) {
-      return ['dashboard', 'projects', 'rfq_management'];
+      return [];
     }
   });
 
   const [favoriteModules, setFavoriteModules] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_favorite_modules');
+      const saved = appStore.getItem('realtyconnect_favorite_modules');
       return saved ? JSON.parse(saved) : [];
     } catch (e) {
       return [];
@@ -503,7 +528,7 @@ export default function LandingPortal({
 
   const [recentModules, setRecentModules] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_recent_modules');
+      const saved = appStore.getItem('realtyconnect_recent_modules');
       return saved ? JSON.parse(saved) : ['dashboard'];
     } catch (e) {
       return ['dashboard'];
@@ -512,7 +537,7 @@ export default function LandingPortal({
 
   const [moduleClicks, setModuleClicks] = useState<Record<string, number>>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_module_clicks');
+      const saved = appStore.getItem('realtyconnect_module_clicks');
       return saved ? JSON.parse(saved) : {};
     } catch (e) {
       return {};
@@ -528,7 +553,7 @@ export default function LandingPortal({
         if (prev[0] === activeViewMode) return prev;
         const next = [activeViewMode, ...prev.filter(m => m !== activeViewMode)].slice(0, 5);
         try {
-          localStorage.setItem('realtyconnect_recent_modules', JSON.stringify(next));
+          appStore.setItem('realtyconnect_recent_modules', JSON.stringify(next));
         } catch (e) {}
         return next;
       });
@@ -540,7 +565,7 @@ export default function LandingPortal({
     setModuleClicks(prev => {
       const next = { ...prev, [moduleId]: (prev[moduleId] || 0) + 1 };
       try {
-        localStorage.setItem('realtyconnect_module_clicks', JSON.stringify(next));
+        appStore.setItem('realtyconnect_module_clicks', JSON.stringify(next));
       } catch (e) {}
       return next;
     });
@@ -551,7 +576,7 @@ export default function LandingPortal({
     setPinnedModules(prev => {
       const next = prev.includes(moduleId) ? prev.filter(m => m !== moduleId) : [...prev, moduleId];
       try {
-        localStorage.setItem('realtyconnect_pinned_modules', JSON.stringify(next));
+        appStore.setItem('realtyconnect_pinned_modules', JSON.stringify(next));
       } catch (err) {}
       showToast(prev.includes(moduleId) ? `Unpinned module from quick access.` : `Pinned module to sidebar quick access!`, 'success');
       return next;
@@ -563,11 +588,37 @@ export default function LandingPortal({
     setFavoriteModules(prev => {
       const next = prev.includes(moduleId) ? prev.filter(m => m !== moduleId) : [...prev, moduleId];
       try {
-        localStorage.setItem('realtyconnect_favorite_modules', JSON.stringify(next));
+        appStore.setItem('realtyconnect_favorite_modules', JSON.stringify(next));
       } catch (err) {}
       showToast(prev.includes(moduleId) ? `Removed from favorite pages.` : `Added page to workspace favorites!`, 'success');
       return next;
     });
+  };
+
+  // The public menu has both "Products" and "Marketplace"; both open the marketplace screen,
+  // Products showing goods only. This remembers which one was chosen so only that one lights up.
+  const [marketplaceScope, setMarketplaceScope] = useState<'all' | 'products'>('all');
+  React.useEffect(() => {
+    if (activeViewMode !== 'marketplace') setMarketplaceScope('all');
+  }, [activeViewMode]);
+  const openMarketplace = (scope: 'all' | 'products') => {
+    setMarketplaceScope(scope);
+    setActiveViewMode('marketplace');
+  };
+  // "Businesses" shows the whole directory, clearing any slice left behind by "Services".
+  const openAllBusinesses = () => {
+    setSearchTerm('');
+    setGlobalSearchTerm('');
+    setSelectedCategory('All');
+    setActiveViewMode('directory');
+  };
+  const isTopNavActive = (id: string): boolean => {
+    if (id === 'products') return activeViewMode === 'marketplace' && marketplaceScope === 'products';
+    if (id === 'marketplace-sec') return activeViewMode === 'marketplace' && marketplaceScope === 'all';
+    if (id === 'services') return activeViewMode === 'directory' && selectedCategory === 'Consultants';
+    // The plain Businesses entry is not "selected" while browsing the Services slice of the directory.
+    if (id === 'directory') return activeViewMode === 'directory' && selectedCategory !== 'Consultants';
+    return activeViewMode === id;
   };
 
   // Sync search state from the new homepage to the directory
@@ -581,11 +632,59 @@ export default function LandingPortal({
 
   // Authentication state for enterprise access
   const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
   const [authRole, setAuthRole] = useState('BUILDER');
   const [authOrgName, setAuthOrgName] = useState('');
-  const [authSubPlan, setAuthSubPlan] = useState('Platinum Developer License');
+  const [authName, setAuthName] = useState('');
+  const [authCity, setAuthCity] = useState('');
   const [authRera, setAuthRera] = useState('');
   const [authDefaultView, setAuthDefaultView] = useState('dashboard');
+  const [authError, setAuthError] = useState('');
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+
+  const switchAuthTab = (tab: 'signin' | 'signup') => {
+    setAuthModalTab(tab);
+    setAuthError('');
+  };
+
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authSubmitting) return;
+    setAuthError('');
+
+    if (authModalTab === 'signup') {
+      const policyError = passwordPolicyError(authPassword);
+      if (policyError) {
+        setAuthError(policyError);
+        return;
+      }
+    }
+
+    setAuthSubmitting(true);
+    try {
+      if (authModalTab === 'signin') {
+        await onLogin?.(authEmail.trim(), authPassword, undefined, authDefaultView);
+      } else {
+        await onRegister?.(
+          {
+            email: authEmail.trim(),
+            password: authPassword,
+            organizationName: authOrgName.trim(),
+            name: authName.trim() || undefined,
+            city: authCity.trim() || undefined,
+            role: authRole,
+            reraRegistration: authRera.trim() || undefined
+          },
+          'dashboard'
+        );
+      }
+      setIsAuthModalOpen(false);
+    } catch (err) {
+      setAuthError(errorMessage(err));
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
 
   const allowedModuleIds = React.useMemo(() => {
     if (!userSession) return new Set<NavItem['id']>();
@@ -613,7 +712,7 @@ export default function LandingPortal({
   // Sidebar States for Premium Enterprise Navigation
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('realtyconnect_sidebar_collapsed') === 'true';
+      return appStore.getItem('realtyconnect_sidebar_collapsed') === 'true';
     } catch (e) {}
     return false;
   });
@@ -623,14 +722,14 @@ export default function LandingPortal({
     setIsSidebarCollapsed(prev => {
       const next = !prev;
       try {
-        localStorage.setItem('realtyconnect_sidebar_collapsed', String(next));
+        appStore.setItem('realtyconnect_sidebar_collapsed', String(next));
       } catch (e) {}
       return next;
     });
   };
 
   // Lifted Business Feed posts for synchronization across Opportunities Engine and Business Feed
-  const [feedPosts, setFeedPosts] = useState<FeedPost[]>(INITIAL_POSTS);
+  const [feedPosts, setFeedPosts] = usePersistentState<FeedPost[]>('rc_feed_posts', INITIAL_POSTS);
 
   // Lifted prefilled meeting scheduling state for cross-module integration
   const [prefilledMeeting, setPrefilledMeeting] = useState<any>(null);
@@ -640,7 +739,7 @@ export default function LandingPortal({
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_global_search_history');
+      const saved = appStore.getItem('realtyconnect_global_search_history');
       return saved ? JSON.parse(saved) : ['TMT Steel', 'Metro Piling', 'AAC Blocks'];
     } catch (e) {
       return ['TMT Steel', 'Metro Piling', 'AAC Blocks'];
@@ -655,7 +754,7 @@ export default function LandingPortal({
   const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
 
   // --- Grouped Seed Notification State ---
-  const [globalNotifications, setGlobalNotifications] = useState<any[]>([
+  const [globalNotifications, setGlobalNotifications] = usePersistentState<any[]>('rc_global_notifications', [
     {
       id: 'notif-1',
       title: 'New RFQ Bid Received',
@@ -717,7 +816,7 @@ export default function LandingPortal({
     const query = globalSearchTerm.toLowerCase();
 
     // 1. Filter Companies
-    const matchedCompanies = DISCOVERY_REGISTRY.filter(item => 
+    const matchedCompanies = companyRegistry.filter(item => 
       item.name.toLowerCase().includes(query) ||
       item.description.toLowerCase().includes(query) ||
       item.specialty.toLowerCase().includes(query) ||
@@ -842,7 +941,7 @@ export default function LandingPortal({
       setSearchHistory(prev => {
         const next = [termToSave, ...prev.filter(t => t !== termToSave)].slice(0, 6);
         try {
-          localStorage.setItem('realtyconnect_global_search_history', JSON.stringify(next));
+          appStore.setItem('realtyconnect_global_search_history', JSON.stringify(next));
         } catch (e) {}
         return next;
       });
@@ -891,7 +990,7 @@ export default function LandingPortal({
         setSearchHistory(prev => {
           const next = [term, ...prev.filter(t => t !== term)].slice(0, 6);
           try {
-            localStorage.setItem('realtyconnect_global_search_history', JSON.stringify(next));
+            appStore.setItem('realtyconnect_global_search_history', JSON.stringify(next));
           } catch (e) {}
           return next;
         });
@@ -910,7 +1009,7 @@ export default function LandingPortal({
     setSearchHistory(prev => {
       const next = prev.filter(t => t !== term);
       try {
-        localStorage.setItem('realtyconnect_global_search_history', JSON.stringify(next));
+        appStore.setItem('realtyconnect_global_search_history', JSON.stringify(next));
       } catch (e) {}
       return next;
     });
@@ -920,7 +1019,7 @@ export default function LandingPortal({
     e.stopPropagation();
     setSearchHistory([]);
     try {
-      localStorage.removeItem('realtyconnect_global_search_history');
+      appStore.removeItem('realtyconnect_global_search_history');
     } catch (e) {}
   };
 
@@ -973,7 +1072,7 @@ export default function LandingPortal({
   const [rfqPrefillOpen, setRfqPrefillOpen] = useState(false);
   const [prefilledRfqOpp, setPrefilledRfqOpp] = useState<any | null>(null);
   
-  const [connections, setConnections] = useState<Connection[]>([
+  const [connections, setConnections] = usePersistentState<Connection[]>('rc_net_connections', [
     {
       id: 'conn-1',
       businessId: 'ent-1',
@@ -1024,13 +1123,13 @@ export default function LandingPortal({
     }
   ]);
 
-  const [connectionsSent, setConnectionsSent] = useState<string[]>(['ent-5']);
-  const [following, setFollowing] = useState<string[]>(['ent-1', 'ent-4']);
-  const [followers, setFollowers] = useState<string[]>(['ent-2', 'ent-7']);
-  const [savedBusinesses, setSavedBusinesses] = useState<string[]>(['ent-3', 'ent-8']);
-  const [favoriteCompanies, setFavoriteCompanies] = useState<string[]>(['ent-1']);
+  const [connectionsSent, setConnectionsSent] = usePersistentState<string[]>('rc_net_connections_sent', ['ent-5']);
+  const [following, setFollowing] = usePersistentState<string[]>('rc_net_following', ['ent-1', 'ent-4']);
+  const [followers, setFollowers] = usePersistentState<string[]>('rc_net_followers', ['ent-2', 'ent-7']);
+  const [savedBusinesses, setSavedBusinesses] = usePersistentState<string[]>('rc_net_saved_businesses', ['ent-3', 'ent-8']);
+  const [favoriteCompanies, setFavoriteCompanies] = usePersistentState<string[]>('rc_net_favorite_companies', ['ent-1']);
 
-  const [enquiries, setEnquiries] = useState<Enquiry[]>([
+  const [enquiries, setEnquiries] = usePersistentState<Enquiry[]>('rc_net_enquiries', [
     {
       id: 'enq-1',
       businessId: 'ent-3',
@@ -1038,7 +1137,7 @@ export default function LandingPortal({
       subject: 'Bulk Fe550D TMT Reinforcement Steel Quote',
       category: 'Material Quotation',
       message: 'Looking to procure 1200 Metric Tons of high-ductility TMT rebars for our active BKC residential skyscraper foundation contract. Please share standard pricing slab with logistics terms.',
-      senderEmail: 'procurement@multisarv.in',
+      senderEmail: currentUserEmail(),
       senderPhone: '+91 98200 44021',
       timestamp: '2026-07-15 04:10 PM',
       reply: '[Automated Callback Response]\n\nGreetings from Elite Materials Group! Thank you for requesting a bulk rebar quote. For a volume of 1200 MT, our current price point is ₹54,500/MT including delivery to BKC. We provide 100% certified RERA audit trails and test sheets with every batch.\n\nA senior sales representative will call you at +91 98200 44021 to finalize custom credit terms.',
@@ -1046,7 +1145,7 @@ export default function LandingPortal({
     }
   ]);
 
-  const [meetings, setMeetings] = useState<Meeting[]>([
+  const [meetings, setMeetings] = usePersistentState<Meeting[]>('rc_net_meetings', [
     {
       id: 'meet-1',
       businessId: 'ent-1',
@@ -1060,7 +1159,7 @@ export default function LandingPortal({
     }
   ]);
 
-  const [partnerships, setPartnerships] = useState<Partnership[]>([
+  const [partnerships, setPartnerships] = usePersistentState<Partnership[]>('rc_net_partnerships', [
     {
       id: 'part-1',
       businessId: 'ent-8',
@@ -1074,9 +1173,9 @@ export default function LandingPortal({
     }
   ]);
 
-  const [contactExchanges, setContactExchanges] = useState<ContactExchange[]>([]);
+  const [contactExchanges, setContactExchanges] = usePersistentState<ContactExchange[]>('rc_net_contact_exchanges', []);
   
-  const [companyVisits, setCompanyVisits] = useState<CompanyVisit[]>([
+  const [companyVisits, setCompanyVisits] = usePersistentState<CompanyVisit[]>('rc_net_company_visits', [
     {
       id: 'visit-1',
       businessId: 'ent-2',
@@ -1090,7 +1189,7 @@ export default function LandingPortal({
     }
   ]);
 
-  const [rfqs, setRfqs] = useState<RfqOpportunity[]>([
+  const [rfqs, setRfqs] = usePersistentState<RfqOpportunity[]>('rc_net_rfqs', [
     {
       id: 'rfq-1',
       title: 'Supply of 350 MT Grade 43 Cement for Noida Layout',
@@ -1119,7 +1218,7 @@ export default function LandingPortal({
     }
   ]);
 
-  const [invitations, setInvitations] = useState<ExternalInvitation[]>([
+  const [invitations, setInvitations] = usePersistentState<ExternalInvitation[]>('rc_net_invitations', [
     {
       id: 'inv-1',
       email: 'procurement@ultratech-bulk.in',
@@ -1138,9 +1237,9 @@ export default function LandingPortal({
     }
   ]);
 
-  const [blockedReported, setBlockedReported] = useState<BlockedReported[]>([]);
+  const [blockedReported, setBlockedReported] = usePersistentState<BlockedReported[]>('rc_net_blocked', []);
   
-  const [timeline, setTimeline] = useState<TimelineEvent[]>([
+  const [timeline, setTimeline] = usePersistentState<TimelineEvent[]>('rc_net_timeline', [
     {
       id: 'time-1',
       timestamp: '2026-07-14 10:30 AM',
@@ -1320,7 +1419,7 @@ export default function LandingPortal({
     priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
   }) => {
     try {
-      const savedLeads = localStorage.getItem('realtyconnect_leads');
+      const savedLeads = appStore.getItem('realtyconnect_leads');
       let currentLeads: any[] = [];
       if (savedLeads) {
         currentLeads = JSON.parse(savedLeads);
@@ -1439,7 +1538,7 @@ export default function LandingPortal({
       };
 
       const updatedLeads = [newLead, ...currentLeads];
-      localStorage.setItem('realtyconnect_leads', JSON.stringify(updatedLeads));
+      appStore.setItem('realtyconnect_leads', JSON.stringify(updatedLeads));
       onLogTriggered('CRM_INTEGRATED_LEAD_CAPTURED', 'leads', nextId, 'SUCCESS', `Integrated CRM: Captured and synchronized cross-module Lead ${nextId} from ${leadData.source}.`);
     } catch (e) {
       console.error('Error creating integrated lead', e);
@@ -1516,8 +1615,8 @@ export default function LandingPortal({
       relatedCompany: name || 'Apex Developers Ltd',
       companyId: businessId || 'ent-1',
       contactPerson: 'Representative',
-      organizer: 'Vikram Malhotra',
-      participants: ['Vikram Malhotra', 'Representative'],
+      organizer: currentUserName(),
+      participants: [currentUserName(), 'Representative'],
       meetingDate: date || '2026-07-20',
       startTime: time ? (time.includes('AM') || time.includes('PM') ? '11:00' : time) : '11:00',
       endTime: '12:00',
@@ -1534,11 +1633,11 @@ export default function LandingPortal({
       attachments: []
     };
 
-    // Save to localStorage list
+    // Save to appStore list
     try {
-      const saved = localStorage.getItem('realtyconnect_meetings');
+      const saved = appStore.getItem('realtyconnect_meetings');
       const currentList = saved ? JSON.parse(saved) : [];
-      localStorage.setItem('realtyconnect_meetings', JSON.stringify([newCalendarMeet, ...currentList]));
+      appStore.setItem('realtyconnect_meetings', JSON.stringify([newCalendarMeet, ...currentList]));
     } catch (e) { console.error(e); }
 
     const newMeet: Meeting = {
@@ -1694,7 +1793,7 @@ export default function LandingPortal({
       estimatedValue: value,
       closeDate,
       description: desc,
-      publishedBy: 'MultiSarv India Pvt. Ltd.',
+      publishedBy: currentOrgName(),
       bidsCount: 0,
       status: 'active',
       timestamp: new Date().toLocaleString()
@@ -1709,7 +1808,7 @@ export default function LandingPortal({
       title: `Active RFQ Tender: ${title}`,
       type: 'Material Requirement',
       source: 'RFQ',
-      company: 'MultiSarv Sourcing Hub',
+      company: currentOrgName(),
       contactPerson: 'Procurement Specialist',
       email: 'sourcing@multisarv.co.in',
       mobile: '+91 98200 44021',
@@ -1793,7 +1892,7 @@ export default function LandingPortal({
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     
-    const results = DISCOVERY_REGISTRY.filter(ent => {
+    const results = companyRegistry.filter(ent => {
       const matchesSearch = ent.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             ent.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                             ent.specialty.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1822,7 +1921,7 @@ export default function LandingPortal({
     setSearchTerm('');
     setSelectedCategory('All');
     setSelectedLocation('All');
-    setSearchResults(DISCOVERY_REGISTRY);
+    setSearchResults(companyRegistry);
     showToast('B2B Registry filter cleared.', 'info');
   };
 
@@ -1918,18 +2017,11 @@ export default function LandingPortal({
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/10">
               <Building2 className="w-5 h-5 text-slate-950 stroke-[2.5]" />
             </div>
-            <div className="hidden sm:block">
-              <div className="flex items-center gap-1 leading-none text-slate-400 font-mono text-[9px] uppercase tracking-wider">
-                <span>MultiSarv India</span>
-                <span className="text-slate-700 text-xs font-sans font-normal">|</span>
-                <span className="text-[8px] bg-emerald-500/10 border border-emerald-500/20 px-1 rounded text-emerald-400 font-bold">
-                  {userSession ? 'ENTERPRISE' : 'B2B MARKETPLACE'}
-                </span>
-              </div>
+            <div className={userSession ? 'hidden sm:block' : ''}>
               <h1 className="font-display font-extrabold text-base tracking-tight text-white flex items-center gap-2 mt-0.5">
                 RealtyConnect™
               </h1>
-              <p className="text-[9px] font-mono tracking-wider text-emerald-400 uppercase font-bold leading-none mt-1">The Real Estate Business Network</p>
+              <p className="hidden sm:block text-[9px] font-mono tracking-wider text-emerald-400 uppercase font-bold leading-none mt-1">The Real Estate Business Network</p>
             </div>
           </div>
 
@@ -1937,17 +2029,15 @@ export default function LandingPortal({
             <div className="hidden lg:flex items-center gap-1 xl:gap-2 border-l border-slate-800 pl-6">
               {[
                 { id: 'home', label: 'Home' },
-                { id: 'directory', label: 'Businesses' },
-                { id: 'marketplace', label: 'Products' },
+                { id: 'directory', label: 'Businesses', action: () => openAllBusinesses() },
+                { id: 'products', label: 'Products', action: () => openMarketplace('products') },
                 { id: 'services', label: 'Services', action: () => {
                   setSearchTerm('Consultants');
                   setGlobalSearchTerm('Consultants');
                   setSelectedCategory('Consultants');
                   setActiveViewMode('directory');
                 } },
-                { id: 'marketplace-sec', label: 'Marketplace', action: () => {
-                  setActiveViewMode('marketplace');
-                } },
+                { id: 'marketplace-sec', label: 'Marketplace', action: () => openMarketplace('all') },
                 { id: 'rfq_management', label: 'RFQs' },
               ].map(item => (
                 <button
@@ -1959,8 +2049,8 @@ export default function LandingPortal({
                       setActiveViewMode(item.id as any);
                     }
                   }}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-tight transition-all cursor-pointer border ${
-                    activeViewMode === item.id || (item.id === 'marketplace-sec' && activeViewMode === 'marketplace')
+                  className={`px-2.5 py-1.5 rounded-lg text-[13px] font-semibold transition-all cursor-pointer border ${
+                    isTopNavActive(item.id)
                       ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-sm shadow-emerald-500/5'
                       : 'text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-900/40'
                   }`}
@@ -1977,7 +2067,7 @@ export default function LandingPortal({
                     document.getElementById('membership-plans-section')?.scrollIntoView({ behavior: 'smooth' });
                   }, 120);
                 }}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-tight transition-all cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-slate-900/40 border border-transparent"
+                className="px-2.5 py-1.5 rounded-lg text-[13px] font-semibold transition-all cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-slate-900/40 border border-transparent"
               >
                 Membership
               </a>
@@ -1990,7 +2080,7 @@ export default function LandingPortal({
                     document.getElementById('about-realtyconnect-section')?.scrollIntoView({ behavior: 'smooth' });
                   }, 120);
                 }}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-tight transition-all cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-slate-900/40 border border-transparent"
+                className="px-2.5 py-1.5 rounded-lg text-[13px] font-semibold transition-all cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-slate-900/40 border border-transparent"
               >
                 About
               </a>
@@ -2003,7 +2093,7 @@ export default function LandingPortal({
                     document.getElementById('contact-us-section')?.scrollIntoView({ behavior: 'smooth' });
                   }, 120);
                 }}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-tight transition-all cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-slate-900/40 border border-transparent"
+                className="px-2.5 py-1.5 rounded-lg text-[13px] font-semibold transition-all cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-slate-900/40 border border-transparent"
               >
                 Contact
               </a>
@@ -2012,7 +2102,7 @@ export default function LandingPortal({
         </div>
 
         {/* Center: Universal Command & Search Palette (Desktop & Tablet) */}
-        <div className="flex-1 max-w-xl mx-4 relative hidden md:block z-50">
+        <div className={`flex-1 max-w-xl mx-4 relative z-50 ${userSession ? 'hidden md:block' : 'hidden 2xl:block'}`}>
           <div className={`relative flex items-center bg-slate-900/80 border rounded-xl px-3.5 py-2 transition-all duration-200 ${
             isSearchFocused 
               ? 'border-emerald-500/80 ring-2 ring-emerald-500/10 shadow-lg shadow-emerald-500/5 bg-slate-900' 
@@ -2334,7 +2424,7 @@ export default function LandingPortal({
         <div className="flex items-center gap-2 md:gap-3 shrink-0">
           
           {!userSession && (
-            <div className="hidden sm:flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -2350,7 +2440,7 @@ export default function LandingPortal({
                 onClick={() => {
                   onStartOnboarding();
                 }}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold font-mono uppercase bg-emerald-500 hover:bg-emerald-600 text-slate-950 transition-all cursor-pointer shadow-md shadow-emerald-500/10"
+                className="hidden sm:block px-3 py-1.5 rounded-lg text-xs font-bold font-mono uppercase bg-emerald-500 hover:bg-emerald-600 text-slate-950 transition-all cursor-pointer shadow-md shadow-emerald-500/10"
               >
                 Sign Up
               </button>
@@ -2383,7 +2473,7 @@ export default function LandingPortal({
                 <div className="fixed inset-0 z-40" onClick={() => setIsQuickCreateOpen(false)} />
                 <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden z-50 py-1 divide-y divide-slate-850 animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="px-3.5 py-1.5 text-[9.5px] font-mono text-slate-500 tracking-wider uppercase">
-                    PLATFORM CORE CREATOR
+                    Platform Core Creator
                   </div>
                   <div className="py-1">
                     <button 
@@ -2646,7 +2736,7 @@ export default function LandingPortal({
                       <div className="flex items-center gap-1.5 mt-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         <span className="text-[9px] font-mono text-slate-400">
-                          ROLE: {userSession.role.toUpperCase()}
+                          Role: {userSession.role.toUpperCase()}
                         </span>
                       </div>
                     </div>
@@ -2656,18 +2746,13 @@ export default function LandingPortal({
                       <button
                         onClick={() => {
                           setIsProfileMenuOpen(false);
-                          const target = DISCOVERY_REGISTRY.find(b => b.id === 'ent-1');
-                          if (target) {
-                            setSelectedBusiness(target);
-                            onLogTriggered('MY_PROFILE_ACCESSED', 'companies', 'ent-1', 'SUCCESS', 'Profile Dropdown: Accessed "My Profile" portfolio sheet.');
-                          } else {
-                            showToast('Loading portfolio profile...', 'info');
-                          }
+                          setSelectedBusiness({ id: userSession.orgId, name: userSession.organizationName, category: '', location: '' } as any);
+                          onLogTriggered('MY_PROFILE_ACCESSED', 'companies', userSession.orgId, 'SUCCESS', 'Profile Dropdown: Opened own company profile.');
                         }}
                         className="w-full text-left px-3.5 py-2 hover:bg-slate-850 flex items-center gap-2 text-xs text-slate-300 hover:text-white transition-all"
                       >
                         <User className="w-3.5 h-3.5 text-slate-400" />
-                        <span>My Profile Portfolio</span>
+                        <span>My Company Profile</span>
                       </button>
                       <button
                         onClick={() => {
@@ -3047,129 +3132,8 @@ export default function LandingPortal({
         />
       )}
 
-      {/* Hero Section: Premium, High-Impact B2B Message */}
-      {activeViewMode !== 'home' && (
-        <section className="relative px-6 py-8 md:py-12 bg-gradient-to-b from-slate-950 via-slate-950/70 to-slate-900 border-b border-slate-850 overflow-hidden text-center">
-        {/* Ambient subtle background graphic blobs */}
-        <div className="absolute top-1/2 left-1/4 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2" />
-        <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2" />
-        
-        <div className="max-w-4xl mx-auto space-y-6 relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/25 rounded-full text-emerald-400 font-mono text-[10px] font-bold tracking-widest uppercase">
-            <Sparkles className="w-3.5 h-3.5 animate-spin duration-3000" />
-            Official B2B Commercial Launch — Phase 01 & 02
-          </div>
-
-          <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white leading-[1.1]">
-            The Integrated Business Network <br/>
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 via-teal-400 to-indigo-400">
-              For Real Estate Enterprises
-            </span>
-          </h2>
-
-          <p className="text-sm sm:text-base text-slate-400 max-w-2xl mx-auto leading-relaxed">
-            Connect directly with verified Developers, Builders, Contractors, Vendors, and Banks. Discover qualified projects, procure raw materials, list heavy machinery, and secure corporate finance—all inside one unified ecosystem.
-          </p>
-
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <button
-              onClick={onStartOnboarding}
-              className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs px-5 py-2.5 rounded-lg transition-all flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
-            >
-              <ShieldCheck className="w-4 h-4 stroke-[2]" />
-              <span>Launch Enterprise Onboarding Experience</span>
-            </button>
-            <a
-              href="#discovery-portal"
-              className="bg-slate-900 hover:bg-slate-850 text-slate-300 font-bold text-xs px-5 py-2.5 rounded-lg border border-slate-800 transition-all flex items-center gap-1.5"
-            >
-              <Search className="w-4 h-4" />
-              <span>Explore B2B Directory</span>
-            </a>
-          </div>
-
-          {/* Slogan highlights */}
-          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-mono text-slate-500 pt-2">
-            <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-500" /> No Intermediary Margins</span>
-            <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-500" /> Verified Corporate Profiles</span>
-            <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-500" /> Immutable Governance Logs</span>
-          </div>
-
-          {/* Interactive Live Search & Business Discovery Panel */}
-          <div id="discovery-portal" className="pt-8 max-w-3xl mx-auto">
-            <form onSubmit={handleSearch} className="bg-slate-950 p-2.5 rounded-2xl border border-slate-800 shadow-xl flex flex-col md:flex-row gap-2">
-              <div className="flex-1 flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-slate-300">
-                <Search className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                <input
-                  type="text"
-                  placeholder="Search Companies, Contractors, Materials, Equipment, Jobs..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-transparent border-none outline-none text-xs text-slate-100 placeholder:text-slate-500"
-                />
-              </div>
-
-              {/* Category Dropdown Selector */}
-              <div className="w-full md:w-44 bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-2 flex items-center gap-1 text-slate-300">
-                <Filter className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full bg-transparent border-none outline-none text-[11px] text-slate-300 font-mono"
-                >
-                  <option value="All">All Categories</option>
-                  <option value="Builders">Builders</option>
-                  <option value="Developers">Developers</option>
-                  <option value="Vendors">Vendors</option>
-                  <option value="Contractors">Contractors</option>
-                  <option value="Consultants">Consultants</option>
-                  <option value="Banks">Banks</option>
-                  <option value="DSAs">DSAs</option>
-                  <option value="Equipment">Equipment</option>
-                  <option value="Materials">Materials</option>
-                </select>
-              </div>
-
-              {/* Location Selector */}
-              <div className="w-full md:w-36 bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-2 flex items-center gap-1 text-slate-300">
-                <MapPin className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                <select
-                  value={selectedLocation}
-                  onChange={(e) => setSelectedLocation(e.target.value)}
-                  className="w-full bg-transparent border-none outline-none text-[11px] text-slate-300 font-mono"
-                >
-                  <option value="All">All Cities</option>
-                  <option value="Mumbai">Mumbai</option>
-                  <option value="Bangalore">Bangalore</option>
-                  <option value="Delhi">Delhi NCR</option>
-                  <option value="Hyderabad">Hyderabad</option>
-                  <option value="Pune">Pune</option>
-                  <option value="Chennai">Chennai</option>
-                </select>
-              </div>
-
-              <button
-                type="submit"
-                className="bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-slate-950 font-bold text-xs py-2 px-5 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20"
-              >
-                <span>Search</span>
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </form>
-
-            <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono px-2 mt-2.5">
-              <span>Try searching for: <strong className="text-emerald-500 cursor-pointer" onClick={() => { setSearchTerm('concrete'); setSelectedCategory('All'); }}>"concrete"</strong>, <strong className="text-emerald-500 cursor-pointer" onClick={() => { setSearchTerm('Apex'); setSelectedCategory('All'); }}>"Apex"</strong>, or <strong className="text-emerald-500 cursor-pointer" onClick={() => { setSearchTerm('crane'); setSelectedCategory('All'); }}>"crane"</strong></span>
-              {(searchTerm || selectedCategory !== 'All' || selectedLocation !== 'All') && (
-                <button type="button" onClick={handleResetSearch} className="text-emerald-400 hover:underline">Reset Filters</button>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-      )}
-
       {/* Dynamic Quick-Start & Interactive System Flow Guide */}
-      {!userSession && (
+      {!userSession && authMeta?.demoMode && (
       <section className="px-4 md:px-6 py-8 bg-slate-900/50 border-b border-slate-850">
         <div className="max-w-7xl mx-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 md:p-6 shadow-2xl relative overflow-hidden">
@@ -3187,7 +3151,7 @@ export default function LandingPortal({
                   <h3 className="text-base font-bold text-white flex items-center gap-2 font-display">
                     Ecosystem Interactive Flow Guide
                     <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-1.5 py-0.5 rounded font-mono font-bold tracking-wider">
-                      QUICK START
+                      Quick Start
                     </span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
@@ -3224,7 +3188,7 @@ export default function LandingPortal({
                   <div>
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-mono font-extrabold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 uppercase tracking-widest">
-                        STEP 1
+                        Step 1
                       </span>
                       {userSession ? (
                         <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
@@ -3255,7 +3219,7 @@ export default function LandingPortal({
                         <button
                           key={rIdx}
                           type="button"
-                          onClick={() => handleQuickLogin(roleObj.email, roleObj.role, roleObj.permissions, roleObj.defaultView)}
+                          onClick={() => handleQuickLogin(roleObj.email, roleObj.role, roleObj.defaultView)}
                           className={`w-full text-left p-3 rounded-xl border text-xs transition-all flex items-start gap-3 relative cursor-pointer ${
                             isSelected 
                               ? 'border-emerald-500 bg-emerald-500/10 text-white shadow-md' 
@@ -3270,7 +3234,7 @@ export default function LandingPortal({
                               <span className="font-bold text-slate-100 truncate">{roleObj.title}</span>
                               {isSelected && (
                                 <span className="text-[8px] bg-emerald-500 text-slate-950 font-bold px-1.5 py-0.5 rounded font-mono leading-none">
-                                  ACTIVE
+                                  Active
                                 </span>
                               )}
                             </div>
@@ -3301,7 +3265,7 @@ export default function LandingPortal({
                   <div>
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-mono font-extrabold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20 uppercase tracking-widest">
-                        STEP 2
+                        Step 2
                       </span>
                       {userSession ? (
                         <span className="text-[9px] font-mono text-blue-400 bg-blue-500/10 border border-blue-500/25 px-2 py-0.5 rounded font-semibold">
@@ -3408,7 +3372,7 @@ export default function LandingPortal({
                   <div>
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-mono font-extrabold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20 uppercase tracking-widest">
-                        STEP 3
+                        Step 3
                       </span>
                       <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
                         <ShieldCheck className="w-3 h-3" />
@@ -3428,7 +3392,7 @@ export default function LandingPortal({
                   <div className="bg-slate-950/80 border border-slate-850 rounded-xl p-3.5 space-y-2 font-mono text-[9.5px]">
                     <div className="text-slate-500 border-b border-slate-900 pb-1 flex items-center justify-between">
                       <span>SECURE LOG CHAIN</span>
-                      <span className="text-[8px] bg-indigo-500/10 text-indigo-400 px-1 rounded">ACTIVE</span>
+                      <span className="text-[8px] bg-indigo-500/10 text-indigo-400 px-1 rounded">Active</span>
                     </div>
                     <div className="space-y-1 text-slate-300">
                       <div className="flex items-center gap-1">
@@ -3475,17 +3439,7 @@ export default function LandingPortal({
       {activeViewMode !== 'home' && (
         <section className="px-4 md:px-6 py-6 bg-slate-950 border-b border-slate-850">
         <div className="max-w-7xl mx-auto space-y-8">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-850 pb-4">
-            <div>
-              <h3 className="text-xl font-extrabold text-white flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-emerald-400" />
-                RealtyConnect™ B2B Hub
-              </h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Verified B2B real estate stakeholder operations center. Built by <span className="text-slate-200 font-semibold">MultiSarv India Pvt. Ltd.</span>
-              </p>
-            </div>
-
+          <div className="flex justify-end lg:hidden">
             {/* Mobile Sidebar Toggle Button */}
             <div className="flex items-center gap-2 lg:hidden">
               <button
@@ -3502,7 +3456,7 @@ export default function LandingPortal({
           <div className="flex flex-col lg:flex-row gap-6 items-start relative">
             {/* Desktop / Tablet Sidebar */}
             <aside 
-              className={`hidden lg:flex flex-col bg-slate-900/30 border border-slate-850 rounded-2xl transition-all duration-300 shrink-0 sticky top-4 ${
+              className={`hidden lg:flex flex-col bg-slate-900/30 border border-slate-850 rounded-2xl transition-all duration-300 shrink-0 sticky top-24 ${
                 isSidebarCollapsed ? 'w-16' : 'w-64'
               }`}
             >
@@ -3538,22 +3492,6 @@ export default function LandingPortal({
                     />
                   </div>
 
-                  <select
-                    value={activeViewMode}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setActiveViewMode(val as any);
-                      trackModuleClick(val);
-                    }}
-                    className="w-full bg-slate-950/80 border border-slate-850 rounded-lg px-2 py-1.5 text-[10px] text-slate-400 font-mono outline-none focus:border-emerald-500/50 cursor-pointer"
-                  >
-                    <option value="" disabled>-- Quick Jump --</option>
-                    {visibleNavigationGroups.flatMap(g => g.items).map(item => (
-                      <option key={item.id} value={item.id}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
                 </div>
               )}
 
@@ -3651,38 +3589,6 @@ export default function LandingPortal({
                                 </button>
                               </div>
                             </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. Recents (if any) */}
-                {!isSidebarCollapsed && recentModules.length > 0 && !sidebarSearch && (
-                  <div className="space-y-1">
-                    <h5 className="px-3.5 text-[9px] font-mono font-bold tracking-widest text-slate-500 uppercase flex items-center justify-between">
-                      <span>Recents</span>
-                      <Clock className="w-2.5 h-2.5 text-slate-600" />
-                    </h5>
-                    <div className="space-y-0.5">
-                      {visibleNavigationGroups.flatMap(g => g.items)
-                        .filter(item => recentModules.includes(item.id) && item.id !== activeViewMode)
-                        .slice(0, 3)
-                        .map(item => {
-                          const Icon = item.icon;
-                          return (
-                            <button
-                              key={`rec-${item.id}`}
-                              type="button"
-                              onClick={() => {
-                                setActiveViewMode(item.id);
-                                trackModuleClick(item.id);
-                              }}
-                              className="w-full flex items-center gap-3 py-1.5 px-3.5 transition-all rounded-lg text-left text-slate-500 hover:text-slate-300 hover:bg-slate-900/30 cursor-pointer"
-                            >
-                              <Icon className="w-3 h-3 text-slate-650" />
-                              <span className="text-[11px] truncate flex-1">{item.label}</span>
-                            </button>
                           );
                         })}
                     </div>
@@ -3840,15 +3746,15 @@ export default function LandingPortal({
                           <div className="space-y-1">
                             {[
                               { id: 'home', label: 'Home', icon: Building2 },
-                              { id: 'directory', label: 'Businesses', icon: Search },
-                              { id: 'marketplace-prods', label: 'Products', icon: ShoppingBag, action: () => setActiveViewMode('marketplace') },
+                              { id: 'directory', label: 'Businesses', icon: Search, action: () => openAllBusinesses() },
+                              { id: 'marketplace-prods', label: 'Products', icon: ShoppingBag, action: () => openMarketplace('products') },
                               { id: 'services', label: 'Services', icon: Briefcase, action: () => {
                                 setSearchTerm('Consultants');
                                 setGlobalSearchTerm('Consultants');
                                 setSelectedCategory('Consultants');
                                 setActiveViewMode('directory');
                               } },
-                              { id: 'marketplace', label: 'Marketplace', icon: Layers, action: () => setActiveViewMode('marketplace') },
+                              { id: 'marketplace', label: 'Marketplace', icon: Layers, action: () => openMarketplace('all') },
                               { id: 'rfq_management', label: 'RFQs', icon: FileText },
                               { id: 'membership', label: 'Membership', icon: Award, action: () => {
                                 setActiveViewMode('home');
@@ -3870,7 +3776,11 @@ export default function LandingPortal({
                               } },
                             ].map(item => {
                               const Icon = item.icon;
-                              const active = activeViewMode === item.id || (item.id === 'marketplace-prods' && activeViewMode === 'marketplace');
+                              const active = item.id === 'marketplace-prods'
+                                ? activeViewMode === 'marketplace' && marketplaceScope === 'products'
+                                : item.id === 'marketplace'
+                                ? activeViewMode === 'marketplace' && marketplaceScope === 'all'
+                                : activeViewMode === item.id;
                               return (
                                 <button
                                   key={item.id}
@@ -4008,6 +3918,7 @@ export default function LandingPortal({
               onLogTriggered={onLogTriggered}
               showToast={showToast}
               onViewBusinessProfile={(id) => {
+                if (openRegisteredCompany(id)) return;
                 const target = DISCOVERY_REGISTRY.find(b => b.id === id);
                 if (target) {
                   setSelectedBusiness(target);
@@ -4058,6 +3969,7 @@ export default function LandingPortal({
               onUnblockCompany={handleUnblockCompany}
               onLogTimeline={handleLogTimeline}
               onViewBusinessProfile={(id) => {
+                if (openRegisteredCompany(id)) return;
                 const target = DISCOVERY_REGISTRY.find(b => b.id === id);
                 if (target) {
                   setSelectedBusiness(target);
@@ -4066,7 +3978,7 @@ export default function LandingPortal({
               }}
               onLogTriggered={onLogTriggered}
               showToast={showToast}
-              allBusinesses={DISCOVERY_REGISTRY}
+              allBusinesses={companyRegistry}
             />
           ) : activeViewMode === 'feed' ? (
             <BusinessFeed
@@ -4082,6 +3994,7 @@ export default function LandingPortal({
               posts={feedPosts}
               setPosts={setFeedPosts}
               onViewBusinessProfile={(id) => {
+                if (openRegisteredCompany(id)) return;
                 const target = DISCOVERY_REGISTRY.find(b => b.id === id);
                 if (target) {
                   setSelectedBusiness(target);
@@ -4121,6 +4034,8 @@ export default function LandingPortal({
             />
           ) : activeViewMode === 'marketplace' ? (
             <BusinessMarketplace
+              key={marketplaceScope}
+              productsOnly={marketplaceScope === 'products'}
               userSession={userSession}
               onLogTriggered={onLogTriggered}
               showToast={showToast}
@@ -4247,10 +4162,13 @@ export default function LandingPortal({
               connectionsSent={connectionsSent}
               savedBusinesses={savedBusinesses}
               favoriteCompanies={favoriteCompanies}
+              registeredCompanies={registeredCompanies}
+              showSampleCompanies={!!authMeta?.demoMode}
               onToggleSave={handleToggleSave}
               onToggleFavorite={handleToggleFavorite}
               onConnectRequest={handleConnectRequest}
               onViewBusinessProfile={(id) => {
+                if (openRegisteredCompany(id)) return;
                 const target = DISCOVERY_REGISTRY.find(b => b.id === id);
                 if (target) {
                   setSelectedBusiness(target);
@@ -4593,7 +4511,7 @@ export default function LandingPortal({
             <div className="bg-slate-950 border border-slate-850 p-6 rounded-2xl flex flex-col justify-between gap-6 hover:border-slate-800 transition-colors">
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono font-bold bg-slate-900 text-slate-400 px-2 py-0.5 rounded border border-slate-850">BASIC DIRECTORY</span>
+                  <span className="text-[9px] font-mono font-bold bg-slate-900 text-slate-400 px-2 py-0.5 rounded border border-slate-850">Basic Directory</span>
                   <h4 className="text-lg font-bold text-white">Starter Free</h4>
                   <p className="text-[11px] text-slate-400">Perfect for individual sub-contractors, brokers, or local building consultants starting out.</p>
                 </div>
@@ -4611,7 +4529,7 @@ export default function LandingPortal({
               </div>
               <button 
                 type="button"
-                onClick={() => showToast('Membership applications will launch upon Phase 02 approval.', 'info')}
+                onClick={() => showToast('Paid plans are not open yet. You can start with the free plan today.', 'info')}
                 className="w-full bg-slate-900 hover:bg-slate-850 border border-slate-800 text-white font-bold text-xs py-2 rounded-xl transition-all"
               >
                 Activate Starter
@@ -4626,7 +4544,7 @@ export default function LandingPortal({
               
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">B2B GROWTH ENGINE</span>
+                  <span className="text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">B2B Growth Engine</span>
                   <h4 className="text-lg font-bold text-white">Commercial Pro</h4>
                   <p className="text-[11px] text-slate-400">Designed for established raw material suppliers, large contractor teams, and busy brokers.</p>
                 </div>
@@ -4644,7 +4562,7 @@ export default function LandingPortal({
               </div>
               <button 
                 type="button"
-                onClick={() => showToast('Membership applications will launch upon Phase 02 approval.', 'info')}
+                onClick={() => showToast('Paid plans are not open yet. You can start with the free plan today.', 'info')}
                 className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs py-2 rounded-xl transition-all shadow-md shadow-emerald-500/20"
               >
                 Go Commercial Pro
@@ -4655,7 +4573,7 @@ export default function LandingPortal({
             <div className="bg-slate-950 border border-slate-850 p-6 rounded-2xl flex flex-col justify-between gap-6 hover:border-slate-800 transition-colors">
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono font-bold bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded border border-indigo-500/20">ENTERPRISE GRADE</span>
+                  <span className="text-[9px] font-mono font-bold bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded border border-indigo-500/20">Enterprise Grade</span>
                   <h4 className="text-lg font-bold text-white">Corporate Elite</h4>
                   <p className="text-[11px] text-slate-400">Engineered for major developers, multi-national construction firms, and institutional banks.</p>
                 </div>
@@ -4673,7 +4591,7 @@ export default function LandingPortal({
               </div>
               <button 
                 type="button"
-                onClick={() => showToast('Membership applications will launch upon Phase 02 approval.', 'info')}
+                onClick={() => showToast('Paid plans are not open yet. You can start with the free plan today.', 'info')}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2 rounded-xl transition-all"
               >
                 Apply Corporate Elite
@@ -4943,6 +4861,11 @@ export default function LandingPortal({
               onLogTriggered={onLogTriggered}
               showToast={showToast}
               userRole={userSession?.role}
+              currentOrgId={userSession?.orgId}
+              onProfileSaved={() => {
+                reloadCompanies();
+                onSessionStale?.();
+              }}
               connections={connections}
               following={following}
               onToggleFollow={handleToggleFollow}
@@ -4970,16 +4893,16 @@ export default function LandingPortal({
                   </div>
                   <div>
                     <h3 className="font-extrabold text-white font-display text-md tracking-tight">RealtyConnect™</h3>
-                    <p className="text-[9px] font-mono text-slate-500 uppercase tracking-widest leading-none">Enterprise Gate</p>
+                    <p className="text-[10px] font-mono text-slate-500 leading-none">Account access</p>
                   </div>
                 </div>
 
                 <div className="space-y-4">
                   <h4 className="text-sm font-extrabold text-slate-100 leading-snug">
-                    Enter the Decoupled Corporate Workspace
+                    Sign in to your business workspace
                   </h4>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Access high-converting tenders, active materials inventory index, RERA disclosures, and dual-signature escrow panels.
+                    Find verified partners, respond to RFQs and tenders, list your products and manage projects, procurement and finance in one place.
                   </p>
                 </div>
               </div>
@@ -4987,24 +4910,27 @@ export default function LandingPortal({
               <div className="space-y-3 pt-6 border-t border-slate-850/60 mt-6 md:mt-0 text-[10px] text-slate-500 font-mono">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>RERA Compliance Bound</span>
+                  <span>Verified business profiles</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Database className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>Cryptographic Logs Enabled</span>
+                  <span>Every action recorded in a tamper-evident audit log</span>
                 </div>
               </div>
             </div>
 
-            {/* Form & Selection Area Right Column */}
-            <div className="flex-1 p-6 md:p-8 flex flex-col justify-between text-left bg-slate-900/60">
+            {/* Form Area Right Column */}
+            <form
+              onSubmit={handleAuthSubmit}
+              className="flex-1 p-6 md:p-8 flex flex-col justify-between text-left bg-slate-900/60"
+            >
               
               {/* Header */}
               <div className="flex items-center justify-between border-b border-slate-850 pb-4">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setAuthModalTab('signin')}
+                    onClick={() => switchAuthTab('signin')}
                     className={`pb-1 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${
                       authModalTab === 'signin' ? 'border-emerald-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'
                     }`}
@@ -5014,13 +4940,12 @@ export default function LandingPortal({
                   <span className="text-slate-800 font-mono">/</span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsAuthModalOpen(false);
-                      onStartOnboarding();
-                    }}
-                    className={`pb-1 text-xs font-bold uppercase tracking-wider border-b-2 transition-all border-transparent text-slate-500 hover:text-slate-300`}
+                    onClick={() => switchAuthTab('signup')}
+                    className={`pb-1 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${
+                      authModalTab === 'signup' ? 'border-emerald-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'
+                    }`}
                   >
-                    Register Entity (Sign Up)
+                    Create Account
                   </button>
                 </div>
                 <button
@@ -5032,62 +4957,57 @@ export default function LandingPortal({
                 </button>
               </div>
 
-              {/* Stakeholder Profiles Selection */}
               <div className="space-y-4 py-4 flex-1">
-                <div>
-                  <h4 className="text-xs font-bold text-slate-200">
-                    Choose Pre-Configured B2B Corporate Persona
-                  </h4>
-                  <p className="text-[10px] text-slate-500 leading-relaxed mt-0.5">
-                    Select a role below to load pre-vetted corporate license parameters, permissions, and landing dashboards instantly:
-                  </p>
-                </div>
+                {/* Demo personas (only offered by servers running in demo mode) */}
+                {authModalTab === 'signin' && authMeta?.demoMode && authMeta.demoAccounts.length > 0 && (
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-200">
+                        Choose a Demo Corporate Persona
+                      </h4>
+                      <p className="text-[10px] text-slate-500 leading-relaxed mt-0.5">
+                        Select a role below to fill in the credentials of a pre-configured demo account:
+                      </p>
+                    </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { title: 'Developer', role: 'BUILDER', email: 'builder@realtyconnect.com', plan: 'Platinum Developer License', org: 'Apex Developers Ltd', rera: 'RERA-MH-90432', view: 'dashboard' },
-                    { title: 'Contractor', role: 'CONTRACTOR', email: 'contractor@realtyconnect.com', plan: 'Gold Contractor Tier', org: 'Vanguard Civil Works', rera: 'RERA-KA-11029', view: 'projects' },
-                    { title: 'Supplier', role: 'MATERIAL_SUPPLIER', email: 'supplier@realtyconnect.com', plan: 'Enterprise Supply Core', org: 'Sai Materials & Aggregates', rera: 'N/A', view: 'inventory' },
-                    { title: 'Consultant', role: 'CONSULTANT', email: 'consultant@realtyconnect.com', plan: 'Executive Advisory S4', org: 'RERA Compliance Associates', rera: 'RERA-DL-80431', view: 'dashboard' },
-                    { title: 'Syndicate Bank', role: 'BANK', email: 'bank@realtyconnect.com', plan: 'Funding Consortium L2', org: 'State Capital Trust Syndicate', rera: 'N/A', view: 'dashboard' },
-                    { title: 'Recruiting Agency', role: 'RECRUITER', email: 'recruiter@realtyconnect.com', plan: 'Talent Suite Unlimited', org: 'Manpower RealEstate Ltd', rera: 'N/A', view: 'dashboard' },
-                    { title: 'Assets & Facilities', role: 'FACILITY_MANAGEMENT', email: 'facilities@realtyconnect.com', plan: 'Property Optimiser Elite', org: 'Apex Facility Management', rera: 'N/A', view: 'dashboard' },
-                    { title: 'Compliance Auditor', role: 'ADMIN', email: 'admin@realtyconnect.com', plan: 'System Audit Root', org: 'Regulatory Directorate', rera: 'N/A', view: 'directory' }
-                  ].map((p, idx) => {
-                    const isSelected = authEmail === p.email;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => {
-                          setAuthEmail(p.email);
-                          setAuthRole(p.role);
-                          setAuthOrgName(p.org);
-                          setAuthSubPlan(p.plan);
-                          setAuthRera(p.rera);
-                          setAuthDefaultView(p.view);
-                        }}
-                        className={`p-2.5 rounded-lg border text-left transition-all ${
-                          isSelected 
-                            ? 'bg-emerald-500/10 border-emerald-500/60 shadow-lg shadow-emerald-500/5 text-emerald-400' 
-                            : 'bg-slate-950 border-slate-850 hover:border-slate-750 text-slate-300'
-                        }`}
-                      >
-                        <div className="text-[11px] font-extrabold truncate">{p.title}</div>
-                        <div className="text-[8px] font-mono text-slate-500 truncate mt-0.5">{p.role}</div>
-                      </button>
-                    );
-                  })}
-                </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {authMeta.demoAccounts.map(p => {
+                        const isSelected = authEmail === p.email;
+                        return (
+                          <button
+                            key={p.email}
+                            type="button"
+                            onClick={() => {
+                              setAuthEmail(p.email);
+                              setAuthPassword(authMeta.demoPassword || '');
+                              setAuthDefaultView(p.view);
+                              setAuthError('');
+                            }}
+                            className={`p-2.5 rounded-lg border text-left transition-all ${
+                              isSelected 
+                                ? 'bg-emerald-500/10 border-emerald-500/60 shadow-lg shadow-emerald-500/5 text-emerald-400' 
+                                : 'bg-slate-950 border-slate-850 hover:border-slate-750 text-slate-300'
+                            }`}
+                          >
+                            <div className="text-[11px] font-extrabold truncate">{p.title}</div>
+                            <div className="text-[10px] font-mono text-slate-500 truncate mt-0.5">{p.role.replace(/_/g, ' ').toLowerCase()}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
-                {/* Manual Credentials */}
-                <div className="border-t border-slate-850/60 pt-4 space-y-3">
+                {/* Credentials */}
+                <div className={`space-y-3 ${authModalTab === 'signin' && authMeta?.demoMode ? 'border-t border-slate-850/60 pt-4' : ''}`}>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Corporate Email Address</label>
+                      <label htmlFor="auth-email" className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Corporate Email Address</label>
                       <input
+                        id="auth-email"
                         type="email"
                         required
+                        autoComplete="username"
                         value={authEmail}
                         onChange={(e) => setAuthEmail(e.target.value)}
                         placeholder="sourcing@adani.com"
@@ -5095,104 +5015,134 @@ export default function LandingPortal({
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Organization Name</label>
+                      <label htmlFor="auth-password" className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Password</label>
                       <input
-                        type="text"
+                        id="auth-password"
+                        type="password"
                         required
-                        value={authOrgName}
-                        onChange={(e) => setAuthOrgName(e.target.value)}
-                        placeholder="Adani Infrastructure Ltd"
+                        autoComplete={authModalTab === 'signin' ? 'current-password' : 'new-password'}
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        placeholder={authModalTab === 'signin' ? 'Enter password' : 'At least 12 characters'}
                         className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-all"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Stakeholder Role Class</label>
-                      <select
-                        value={authRole}
-                        onChange={(e) => setAuthRole(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none transition-all font-mono"
-                      >
-                        <option value="BUILDER">Builder / Developer</option>
-                        <option value="CONTRACTOR">Civil Sub-Contractor</option>
-                        <option value="MATERIAL_SUPPLIER">Material Supplier / Vendor</option>
-                        <option value="CONSULTANT">Legal & Liaison Consultant</option>
-                        <option value="BANK">Syndicate Banker / Financer</option>
-                        <option value="RECRUITER">Enterprise Talent Recruiter</option>
-                        <option value="FACILITY_MANAGEMENT">Assets & Facility Manager</option>
-                        <option value="ADMIN">Compliance Auditor (Administrator)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Authority Licensure / RERA ID</label>
-                      <input
-                        type="text"
-                        value={authRera}
-                        onChange={(e) => setAuthRera(e.target.value)}
-                        placeholder="RERA-MH-90432 (or N/A)"
-                        className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-all"
-                      />
-                    </div>
-                  </div>
+                  {authModalTab === 'signup' && (
+                    <>
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                        Passwords need 12+ characters with an uppercase letter, a lowercase letter, a digit and a special character.
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label htmlFor="auth-org" className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Organization Name</label>
+                          <input
+                            id="auth-org"
+                            type="text"
+                            required
+                            minLength={2}
+                            autoComplete="organization"
+                            value={authOrgName}
+                            onChange={(e) => setAuthOrgName(e.target.value)}
+                            placeholder="Adani Infrastructure Ltd"
+                            className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="auth-role" className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Stakeholder Role Class</label>
+                          <select
+                            id="auth-role"
+                            value={authRole}
+                            onChange={(e) => setAuthRole(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none transition-all font-mono"
+                          >
+                            {(authMeta?.selfServiceRoles ?? Object.keys(SIGNUP_ROLE_LABELS)).map(code => (
+                              <option key={code} value={code}>{SIGNUP_ROLE_LABELS[code] ?? code}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label htmlFor="auth-name" className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Your Name</label>
+                          <input
+                            id="auth-name"
+                            type="text"
+                            required
+                            autoComplete="name"
+                            value={authName}
+                            onChange={(e) => setAuthName(e.target.value)}
+                            placeholder="Full name"
+                            className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="auth-city" className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">City</label>
+                          <input
+                            id="auth-city"
+                            type="text"
+                            required
+                            value={authCity}
+                            onChange={(e) => setAuthCity(e.target.value)}
+                            placeholder="Mumbai"
+                            className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="auth-rera" className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">RERA ID (optional)</label>
+                          <input
+                            id="auth-rera"
+                            type="text"
+                            value={authRera}
+                            onChange={(e) => setAuthRera(e.target.value)}
+                            placeholder="RERA-MH-90432"
+                            className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
 
-                {/* Selected Parameters Review Card */}
-                <div className="bg-slate-950 border border-slate-850 p-3 rounded-lg flex flex-wrap items-center justify-between gap-3 text-[10px] font-mono">
-                  <div className="flex items-center gap-1">
-                    <span className="text-slate-500">License:</span>
-                    <span className="text-emerald-400 font-bold">{authSubPlan}</span>
+                {authError && (
+                  <div role="alert" className="bg-red-950/20 border border-red-900/40 text-red-300 p-3 rounded-lg flex items-start gap-2 text-[11px] leading-relaxed">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                    <span>{authError}</span>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-slate-500">Organization:</span>
-                    <span className="text-slate-300 font-semibold">{authOrgName}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-slate-500">Default Landing:</span>
-                    <span className="text-blue-400 uppercase font-bold">{authDefaultView}</span>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Actions Footer */}
               <div className="border-t border-slate-850/60 pt-4 flex flex-col sm:flex-row gap-3 items-center justify-between">
-                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono">
-                  <Lock className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
-                  <span>AES-256 Dual Key Authorization Session</span>
-                </div>
-                
                 <button
                   type="button"
                   onClick={() => {
-                    const permissions = [
-                      'CREATE_PROJECT', 'VIEW_VENDORS', 'CREATE_RFQ', 'VIEW_PROPOSALS', 
-                      'VIEW_CONTRACTS', 'COMMUNICATE_B2B', 'MANAGE_LABOUR', 'SUBMIT_PROPOSAL', 
-                      'MANAGE_PRODUCTS', 'VIEW_RFQS', 'MANAGE_INVENTORY', 'VIEW_PROJECTS', 
-                      'MANAGE_USERS', 'MANAGE_ROLES', 'MANAGE_SYSTEM_CONFIGS', 'MANAGE_COMMON_MASTERS', 'VIEW_AUDIT_LOGS'
-                    ];
-                    
-                    if (onLogin) {
-                      onLogin(authEmail, authRole, permissions, authSubPlan, authOrgName, authRera);
-                      setActiveViewMode(authDefaultView as any);
-                      setIsAuthModalOpen(false);
-                      showToast(`Successfully logged in as ${authRole}! Entered custom workspace.`, 'success');
-                      onLogTriggered(
-                        'AUTH_LOGIN_SUCCESS',
-                        'users',
-                        authEmail,
-                        'SUCCESS',
-                        `Corporate Portal: Signed in as ${authRole}. Plan: "${authSubPlan}". Organization: "${authOrgName}".`
-                      );
-                    }
+                    setIsAuthModalOpen(false);
+                    onStartOnboarding();
                   }}
-                  className="px-6 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs font-mono flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-emerald-500/10 active:scale-95"
+                  className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-emerald-400 font-mono transition-all cursor-pointer"
                 >
-                  <span>Authenticate & Boot Workspace →</span>
+                  <Lock className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Explore the guided onboarding walkthrough</span>
+                </button>
+                
+                <button
+                  type="submit"
+                  disabled={authSubmitting}
+                  className="px-6 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-not-allowed text-slate-950 font-bold text-xs font-mono flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-emerald-500/10 active:scale-95"
+                >
+                  <span>
+                    {authSubmitting
+                      ? 'Please wait...'
+                      : authModalTab === 'signin'
+                      ? 'Sign In & Open Workspace →'
+                      : 'Create Account & Open Workspace →'}
+                  </span>
                 </button>
               </div>
 
-            </div>
+            </form>
 
           </div>
         </div>
@@ -5230,9 +5180,9 @@ export default function LandingPortal({
               &copy; 2026 MultiSarv India Pvt. Ltd. All Rights Reserved. RealtyConnect™ - The Real Estate Business Ecosystem. Registered under RERA B2B Governance standards.
             </div>
 
-            {/* Secure developer bridge link explicitly required for audit evaluation */}
+            {/* Platform tools (audit log, masters, system settings) are for administrators and demo servers only */}
+            {(authMeta?.demoMode || userSession?.permissions.includes('MANAGE_SYSTEM_CONFIGS') || userSession?.permissions.includes('VIEW_AUDIT_LOGS')) && (
             <div className="flex items-center gap-3">
-              <span className="text-slate-650">Compliance Node: #RC-9043</span>
               <button
                 type="button"
                 onClick={() => {
@@ -5240,12 +5190,13 @@ export default function LandingPortal({
                   onToggleDevHub();
                 }}
                 className="text-emerald-500/60 hover:text-emerald-400 hover:underline flex items-center gap-1 border border-emerald-500/10 hover:border-emerald-500/20 bg-emerald-500/5 px-2 py-1 rounded"
-                title="Return to Technical Foundation for testing and logs verification"
+                title="Audit log, master data, system settings and access control"
               >
                 <Terminal className="w-3 h-3 text-emerald-400" />
-                <span>Developer Foundation Hub</span>
+                <span>Platform Administration</span>
               </button>
             </div>
+            )}
           </div>
         </footer>
       )}

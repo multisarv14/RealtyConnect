@@ -312,7 +312,7 @@ The RealtyConnect Registration & Onboarding Module is re-engineered from a rigid
   },
   rules: {
     title: '2. Business Rules',
-    content: `### Industry Guardrails (Phase 03 Bylaws)
+    content: `### Industry Guardrails
 1. **Developer Trust Shield Requirements**:
    - Builders must present a formatted RERA ID (checked via simulated API loop).
    - Capital cap threshold of ₹2 Crore required to host public material tenders.

@@ -548,7 +548,7 @@ const InteractiveVideoPlayer = ({ title, duration, views }: { title: string; dur
       <div className="absolute inset-0 bg-gradient-to-br from-indigo-950/40 via-slate-900/60 to-slate-950 flex flex-col justify-between p-4">
         {/* Top telemetry bar */}
         <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 z-10">
-          <span className="bg-slate-900/80 px-2 py-0.5 rounded border border-slate-800 text-[9px] tracking-wider">STREAMING • HD 1080P</span>
+          <span className="bg-slate-900/80 px-2 py-0.5 rounded border border-slate-800 text-[9px] tracking-wider">Streaming • HD 1080P</span>
           <span className="flex items-center gap-1.5 text-emerald-400 font-bold bg-slate-900/80 px-2 py-0.5 rounded border border-slate-800">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             {views} Views
@@ -562,7 +562,7 @@ const InteractiveVideoPlayer = ({ title, duration, views }: { title: string; dur
             className="w-11 h-11 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-transform"
           >
             {isPlaying ? (
-              <span className="font-mono text-[9px] font-extrabold uppercase">PAUSE</span>
+              <span className="font-mono text-[9px] font-extrabold uppercase">Pause</span>
             ) : (
               <Play className="w-4 h-4 fill-slate-950 ml-0.5" />
             )}
@@ -1561,7 +1561,7 @@ export default function BusinessFeed({
                             {comment.isPinned && (
                               <div className="absolute top-3 right-3 flex items-center gap-1 text-[8px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/15">
                                 <Check className="w-2.5 h-2.5 stroke-[3px]" />
-                                PINNED BY AUTHOR
+                                Pinned by Author
                               </div>
                             )}
 

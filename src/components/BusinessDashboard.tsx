@@ -3,6 +3,7 @@
  * A premium, highly polished Swiss Slate themed dashboard.
  */
 
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -51,6 +52,7 @@ import { Connection, Enquiry, Meeting, RfqOpportunity } from './BusinessNetworki
 interface BusinessDashboardProps {
   userSession: { 
     email: string; 
+    name?: string; 
     role: string; 
     permissions: string[]; 
     subscriptionPlan?: string; 
@@ -126,10 +128,10 @@ export default function BusinessDashboard({
     return 'BUILDER';
   });
 
-  // Dynamic B2B Marketplace Integration Data loaded from localStorage
+  // Dynamic B2B Marketplace Integration Data loaded from appStore
   const [localMktListings, setLocalMktListings] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_marketplace_listings');
+      const saved = appStore.getItem('realtyconnect_marketplace_listings');
       if (saved) return JSON.parse(saved);
     } catch(e) {}
     return [];
@@ -137,7 +139,7 @@ export default function BusinessDashboard({
 
   const [localMktEnquiries, setLocalMktEnquiries] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_product_enquiries');
+      const saved = appStore.getItem('realtyconnect_product_enquiries');
       if (saved) return JSON.parse(saved);
     } catch(e) {}
     return [];
@@ -145,7 +147,7 @@ export default function BusinessDashboard({
 
   const [localMktSaved, setLocalMktSaved] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_saved_listings');
+      const saved = appStore.getItem('realtyconnect_saved_listings');
       if (saved) return JSON.parse(saved);
     } catch(e) {}
     return [];
@@ -153,7 +155,7 @@ export default function BusinessDashboard({
 
   const [dashboardLeads, setDashboardLeads] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_leads');
+      const saved = appStore.getItem('realtyconnect_leads');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return [];
@@ -161,7 +163,7 @@ export default function BusinessDashboard({
 
   const [enterpriseMeetings, setEnterpriseMeetings] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_meetings');
+      const saved = appStore.getItem('realtyconnect_meetings');
       if (saved) return JSON.parse(saved);
     } catch(e) {}
     return [];
@@ -170,19 +172,19 @@ export default function BusinessDashboard({
   useEffect(() => {
     const handleSync = () => {
       try {
-        const savedListings = localStorage.getItem('realtyconnect_marketplace_listings');
+        const savedListings = appStore.getItem('realtyconnect_marketplace_listings');
         if (savedListings) setLocalMktListings(JSON.parse(savedListings));
         
-        const savedEnquiries = localStorage.getItem('realtyconnect_product_enquiries');
+        const savedEnquiries = appStore.getItem('realtyconnect_product_enquiries');
         if (savedEnquiries) setLocalMktEnquiries(JSON.parse(savedEnquiries));
 
-        const savedBookmarks = localStorage.getItem('realtyconnect_saved_listings');
+        const savedBookmarks = appStore.getItem('realtyconnect_saved_listings');
         if (savedBookmarks) setLocalMktSaved(JSON.parse(savedBookmarks));
 
-        const savedLeads = localStorage.getItem('realtyconnect_leads');
+        const savedLeads = appStore.getItem('realtyconnect_leads');
         if (savedLeads) setDashboardLeads(JSON.parse(savedLeads));
 
-        const savedMeetings = localStorage.getItem('realtyconnect_meetings');
+        const savedMeetings = appStore.getItem('realtyconnect_meetings');
         if (savedMeetings) setEnterpriseMeetings(JSON.parse(savedMeetings));
       } catch (e) {
         console.error('Error syncing marketplace dashboard stats', e);
@@ -196,7 +198,7 @@ export default function BusinessDashboard({
   // Synchronized RFQ and Quotations States
   const [rfqList] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_rfq_list');
+      const saved = appStore.getItem('realtyconnect_rfq_list');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -234,7 +236,7 @@ export default function BusinessDashboard({
 
   const [quotationList] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_quotation_list');
+      const saved = appStore.getItem('realtyconnect_quotation_list');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -300,7 +302,7 @@ export default function BusinessDashboard({
   // 1. Interactive Today's Priorities List
   const [priorities, setPriorities] = useState<{ id: string; text: string; done: boolean; category: string }[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_dashboard_priorities');
+      const saved = appStore.getItem('realtyconnect_dashboard_priorities');
       return saved ? JSON.parse(saved) : [
         { id: 'p1', text: 'Validate RERA compliance disclosures for Tower B filings', done: false, category: 'Compliance' },
         { id: 'p2', text: 'Approve quotation for 4,000 MT reinforcement steel', done: true, category: 'Procurement' },
@@ -325,7 +327,7 @@ export default function BusinessDashboard({
     };
     const updated = [newP, ...priorities];
     setPriorities(updated);
-    localStorage.setItem('realtyconnect_dashboard_priorities', JSON.stringify(updated));
+    appStore.setItem('realtyconnect_dashboard_priorities', JSON.stringify(updated));
     setNewPriorityText('');
     showToast('New dynamic corporate priority logged!', 'success');
     onLogTriggered('B2B_PRIORITY_ADDED', 'priorities', newP.id, 'SUCCESS', `Added priority: ${newP.text}`);
@@ -334,20 +336,20 @@ export default function BusinessDashboard({
   const handleTogglePriority = (id: string) => {
     const updated = priorities.map(p => p.id === id ? { ...p, done: !p.done } : p);
     setPriorities(updated);
-    localStorage.setItem('realtyconnect_dashboard_priorities', JSON.stringify(updated));
+    appStore.setItem('realtyconnect_dashboard_priorities', JSON.stringify(updated));
     onLogTriggered('B2B_PRIORITY_TOGGLED', 'priorities', id, 'SUCCESS', `Toggled priority: ${id}`);
   };
 
   const handleDeletePriority = (id: string) => {
     const updated = priorities.filter(p => p.id !== id);
     setPriorities(updated);
-    localStorage.setItem('realtyconnect_dashboard_priorities', JSON.stringify(updated));
+    appStore.setItem('realtyconnect_dashboard_priorities', JSON.stringify(updated));
   };
 
   // 2. Interactive Pending Role Checklist
   const [checklists, setChecklists] = useState<{ id: string; text: string; done: boolean }[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_dashboard_checklist');
+      const saved = appStore.getItem('realtyconnect_dashboard_checklist');
       return saved ? JSON.parse(saved) : [
         { id: 'c1', text: 'Submit foundation work blueprints', done: false },
         { id: 'c2', text: 'Publish cement supply RFQ on B2B portal', done: false },
@@ -371,7 +373,7 @@ export default function BusinessDashboard({
     };
     const updated = [...checklists, newC];
     setChecklists(updated);
-    localStorage.setItem('realtyconnect_dashboard_checklist', JSON.stringify(updated));
+    appStore.setItem('realtyconnect_dashboard_checklist', JSON.stringify(updated));
     setNewChecklistText('');
     showToast('Task added to operational checklist.', 'success');
   };
@@ -379,19 +381,19 @@ export default function BusinessDashboard({
   const handleToggleChecklist = (id: string) => {
     const updated = checklists.map(c => c.id === id ? { ...c, done: !c.done } : c);
     setChecklists(updated);
-    localStorage.setItem('realtyconnect_dashboard_checklist', JSON.stringify(updated));
+    appStore.setItem('realtyconnect_dashboard_checklist', JSON.stringify(updated));
   };
 
   const handleDeleteChecklist = (id: string) => {
     const updated = checklists.filter(c => c.id !== id);
     setChecklists(updated);
-    localStorage.setItem('realtyconnect_dashboard_checklist', JSON.stringify(updated));
+    appStore.setItem('realtyconnect_dashboard_checklist', JSON.stringify(updated));
   };
 
   // 3. Workspace Personalization States
   const [dashboardWidgets, setDashboardWidgets] = useState<Record<string, boolean>>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_dashboard_widgets');
+      const saved = appStore.getItem('realtyconnect_dashboard_widgets');
       return saved ? JSON.parse(saved) : {
         priorities: true,
         checklist: true,
@@ -409,7 +411,7 @@ export default function BusinessDashboard({
   const toggleWidgetConfig = (widgetKey: string) => {
     const updated = { ...dashboardWidgets, [widgetKey]: !dashboardWidgets[widgetKey] };
     setDashboardWidgets(updated);
-    localStorage.setItem('realtyconnect_dashboard_widgets', JSON.stringify(updated));
+    appStore.setItem('realtyconnect_dashboard_widgets', JSON.stringify(updated));
     showToast(`Widget state adjusted for ${widgetKey}!`, 'info');
   };
 
@@ -424,7 +426,7 @@ export default function BusinessDashboard({
     unread: boolean;
   }[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_grouped_notifications');
+      const saved = appStore.getItem('realtyconnect_grouped_notifications');
       return saved ? JSON.parse(saved) : [
         { id: 'noti-c1', text: 'Lead "Nikhil Sharma" requested custom pricing brochure.', time: '5 mins ago', category: 'CRM', unread: true },
         { id: 'noti-c2', text: 'Construction concrete pour audit submitted for approval.', time: '1 hour ago', category: 'Projects', unread: true },
@@ -443,14 +445,14 @@ export default function BusinessDashboard({
   const handleMarkGroupedRead = (id: string) => {
     const updated = categorizedNotifications.map(n => n.id === id ? { ...n, unread: false } : n);
     setCategorizedNotifications(updated);
-    localStorage.setItem('realtyconnect_grouped_notifications', JSON.stringify(updated));
+    appStore.setItem('realtyconnect_grouped_notifications', JSON.stringify(updated));
     showToast('Notification marked as read.', 'success');
   };
 
   const handleArchiveNotification = (id: string) => {
     const updated = categorizedNotifications.filter(n => n.id !== id);
     setCategorizedNotifications(updated);
-    localStorage.setItem('realtyconnect_grouped_notifications', JSON.stringify(updated));
+    appStore.setItem('realtyconnect_grouped_notifications', JSON.stringify(updated));
     showToast('Notification archived securely.', 'info');
   };
 
@@ -1041,19 +1043,16 @@ export default function BusinessDashboard({
             <div className="flex flex-wrap items-center gap-2">
               <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-mono px-2.5 py-1 rounded border border-emerald-500/20 uppercase tracking-widest font-bold flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                ENTERPRISE COMMAND CENTER
-              </span>
-              <span className="bg-indigo-500/10 text-indigo-400 text-[10px] font-mono px-2.5 py-1 rounded border border-indigo-500/20 uppercase tracking-widest font-bold">
-                PLATFORM FOUNDATION LIVE
+                Control Center
               </span>
             </div>
             
             <div className="space-y-1">
-              <span className="text-xs font-mono text-slate-500 uppercase tracking-wider block">
-                Logged in as: {userSession?.email || 'guest@multisarv.in'}
+              <span className="text-xs text-slate-500 block">
+                Signed in as {userSession?.email || ''}
               </span>
               <h1 className="font-display font-extrabold text-2xl lg:text-3xl text-slate-100 tracking-tight flex flex-wrap items-center gap-2.5">
-                Welcome, <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200">{userSession?.email ? userSession.email.split('@')[0] : 'Partner'}</span>!
+                Welcome, <span className="text-emerald-400">{userSession?.name || (userSession?.email ? userSession.email.split('@')[0] : 'Partner')}</span>!
               </h1>
               <div className="flex flex-wrap items-center gap-2 text-slate-300 font-medium">
                 <Building2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -1086,7 +1085,7 @@ export default function BusinessDashboard({
               <span className="text-slate-700">|</span>
               <div className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wide">Nodes status: ALL STREAMS OPERATIONAL</span>
+                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wide">All systems operational</span>
               </div>
             </div>
           </div>
@@ -1265,7 +1264,7 @@ export default function BusinessDashboard({
                 <Sparkles className="w-4 h-4 text-emerald-400" />
                 Quick Operations Desk
               </h3>
-              <span className="text-[10px] font-mono text-slate-500">7 IMMEDIATE DISPATCHERS</span>
+              <span className="text-[10px] font-mono text-slate-500">7 Immediate Dispatchers</span>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
@@ -1372,13 +1371,13 @@ export default function BusinessDashboard({
               </div>
 
               {/* Add Priority Form */}
-              <form onSubmit={handleAddPriority} className="flex gap-2 bg-slate-950/60 p-2 rounded-xl border border-slate-850">
+              <form onSubmit={handleAddPriority} className="flex flex-wrap gap-2 bg-slate-950/60 p-2 rounded-xl border border-slate-850">
                 <input
                   type="text"
                   placeholder="Type an urgent operational priority..."
                   value={newPriorityText}
                   onChange={(e) => setNewPriorityText(e.target.value)}
-                  className="flex-1 bg-transparent text-xs text-slate-200 outline-none placeholder:text-slate-650 px-2"
+                  className="flex-1 min-w-[10rem] bg-transparent text-xs text-slate-200 outline-none placeholder:text-slate-650 px-2"
                 />
                 <select
                   value={newPriorityCat}
@@ -1611,7 +1610,7 @@ export default function BusinessDashboard({
               </div>
               <span className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                SECURE TELEMETRY GREEN
+                Secure Telemetry Green
               </span>
             </div>
 
@@ -1785,7 +1784,7 @@ export default function BusinessDashboard({
                   <h4 className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
                     Lead Sourcing Engine Breakdown
                   </h4>
-                  <span className="text-[9px] font-mono text-slate-500">4 INTEGRATED CHANNELS</span>
+                  <span className="text-[9px] font-mono text-slate-500">4 Integrated Channels</span>
                 </div>
 
                 <div className="space-y-2.5 bg-slate-950/40 p-3.5 rounded-xl border border-slate-900">
@@ -1822,7 +1821,7 @@ export default function BusinessDashboard({
                   <h4 className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
                     Pipeline Active Enquiries
                   </h4>
-                  <span className="text-[9px] font-mono text-slate-500">3 LATEST HOOKS</span>
+                  <span className="text-[9px] font-mono text-slate-500">3 Latest Hooks</span>
                 </div>
 
                 <div className="space-y-2">
@@ -1876,7 +1875,7 @@ export default function BusinessDashboard({
                   <h2 className="font-display font-bold text-md text-slate-100 flex items-center gap-1.5">
                     {roleConfig.title}
                   </h2>
-                  <p className="text-[11px] text-slate-500 font-mono">ROLE-SPECIFIC ACTION WIDGETS</p>
+                  <p className="text-[11px] text-slate-500 font-mono">Role-Specific Action Widgets</p>
                 </div>
               </div>
 
@@ -2365,7 +2364,7 @@ export default function BusinessDashboard({
                           <div className="p-2.5 bg-slate-950/60 border-l-2 border-emerald-500 rounded text-[11px] text-slate-300 space-y-1">
                             <div className="flex items-center justify-between font-mono text-[9px] text-slate-500 font-bold uppercase">
                               <span>Instant Callback Dispatch</span>
-                              <span className="text-emerald-400">STATUS: AUTOCALLBACK</span>
+                              <span className="text-emerald-400">Status: Autocallback</span>
                             </div>
                             <p className="italic line-clamp-2">{enq.reply}</p>
                           </div>
@@ -2488,7 +2487,7 @@ export default function BusinessDashboard({
                 <TrendingUp className="w-4 h-4 text-emerald-400" />
                 Business Insights & Analytics
               </h4>
-              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">REALTIME</span>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">Realtime</span>
             </div>
 
             {/* Engagement Score Radial Dial & Text */}
@@ -2573,7 +2572,7 @@ export default function BusinessDashboard({
                 <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
                 Smart Recommendations
               </h4>
-              <span className="text-[9px] font-mono text-slate-500">AI TARGETED</span>
+              <span className="text-[9px] font-mono text-slate-500">AI Targeted</span>
             </div>
 
             <div className="space-y-3">
@@ -2663,7 +2662,7 @@ export default function BusinessDashboard({
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                 Operational Reminders
               </h4>
-              <span className="text-[9px] font-mono text-slate-500">TODO LIST</span>
+              <span className="text-[9px] font-mono text-slate-500">Todo List</span>
             </div>
 
             <div className="space-y-3">
@@ -2699,7 +2698,7 @@ export default function BusinessDashboard({
                 <Bell className="w-4 h-4 text-emerald-400" />
                 Live Control Desk Notifications
               </h4>
-              <span className="text-[9px] font-mono text-slate-500">REALTIME</span>
+              <span className="text-[9px] font-mono text-slate-500">Realtime</span>
             </div>
 
             <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
@@ -2786,7 +2785,7 @@ export default function BusinessDashboard({
                 <Heart className="w-4 h-4 text-red-400" />
                 Saved & Favorites Registry
               </h4>
-              <span className="text-[9px] font-mono text-slate-500">{savedBusinesses.length + favoriteCompanies.length} COMPANIES</span>
+              <span className="text-[9px] font-mono text-slate-500">{savedBusinesses.length + favoriteCompanies.length} Companies</span>
             </div>
 
             <div className="space-y-3">
@@ -2847,7 +2846,7 @@ export default function BusinessDashboard({
                 <SlidersHorizontal className="w-4 h-4 text-emerald-400" />
                 Workspace Settings
               </h4>
-              <span className="text-[9px] font-mono text-slate-500">CUSTOMIZER</span>
+              <span className="text-[9px] font-mono text-slate-500">Customizer</span>
             </div>
 
             <div className="space-y-4">
@@ -2930,7 +2929,7 @@ export default function BusinessDashboard({
                   <ClipboardList className="w-4 h-4 text-emerald-400" />
                   Productivity Search Logs
                 </h4>
-                <span className="text-[9px] font-mono text-slate-500">TRACE TRAIL</span>
+                <span className="text-[9px] font-mono text-slate-500">Trace Trail</span>
               </div>
 
               <div className="space-y-3">
@@ -3329,7 +3328,7 @@ export default function BusinessDashboard({
 
             <div className="p-4 bg-slate-950 border border-slate-850 rounded-xl space-y-3">
               <span className="text-[10px] font-mono bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded font-bold uppercase">
-                RECOMMENDED PLAN
+                Recommended Plan
               </span>
               <div className="flex justify-between items-baseline">
                 <span className="text-md font-bold text-slate-200">Enterprise Platinum</span>

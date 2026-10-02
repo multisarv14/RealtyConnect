@@ -1,3 +1,4 @@
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect } from 'react';
 import { 
   Users, Folder, FileText, Bell, Sparkles, TrendingUp, AlertCircle, HelpCircle, 
@@ -37,63 +38,63 @@ export default function BusinessHrDmsEngine({
   // ==========================================
   
   const [employees, setEmployees] = useState<Employee[]>(() => {
-    const saved = localStorage.getItem('rc_hr_employees');
+    const saved = appStore.getItem('rc_hr_employees');
     return saved ? JSON.parse(saved) : INITIAL_EMPLOYEES;
   });
 
   const [departments, setDepartments] = useState<Department[]>(() => {
-    const saved = localStorage.getItem('rc_hr_departments');
+    const saved = appStore.getItem('rc_hr_departments');
     return saved ? JSON.parse(saved) : INITIAL_DEPARTMENTS;
   });
 
   const [openings, setOpenings] = useState<JobOpening[]>(() => {
-    const saved = localStorage.getItem('rc_hr_openings');
+    const saved = appStore.getItem('rc_hr_openings');
     return saved ? JSON.parse(saved) : INITIAL_JOB_OPENINGS;
   });
 
   const [candidates, setCandidates] = useState<Candidate[]>(() => {
-    const saved = localStorage.getItem('rc_hr_candidates');
+    const saved = appStore.getItem('rc_hr_candidates');
     return saved ? JSON.parse(saved) : INITIAL_CANDIDATES;
   });
 
   const [interviews, setInterviews] = useState<Interview[]>(() => {
-    const saved = localStorage.getItem('rc_hr_interviews');
+    const saved = appStore.getItem('rc_hr_interviews');
     return saved ? JSON.parse(saved) : INITIAL_INTERVIEWS;
   });
 
   const [activities, setActivities] = useState<EmployeeActivity[]>(() => {
-    const saved = localStorage.getItem('rc_hr_activities');
+    const saved = appStore.getItem('rc_hr_activities');
     return saved ? JSON.parse(saved) : INITIAL_ACTIVITIES;
   });
 
   // DMS persistence
   const [folders, setFolders] = useState<FolderType[]>(() => {
-    const saved = localStorage.getItem('rc_dms_folders');
+    const saved = appStore.getItem('rc_dms_folders');
     return saved ? JSON.parse(saved) : INITIAL_FOLDERS;
   });
 
   const [documents, setDocuments] = useState<DocumentRecord[]>(() => {
-    const saved = localStorage.getItem('rc_dms_documents');
+    const saved = appStore.getItem('rc_dms_documents');
     return saved ? JSON.parse(saved) : INITIAL_DOCUMENTS;
   });
 
   const [notifications, setNotifications] = useState<HrDmsNotification[]>(() => {
-    const saved = localStorage.getItem('rc_hrdms_notifications');
+    const saved = appStore.getItem('rc_hrdms_notifications');
     return saved ? JSON.parse(saved) : INITIAL_HR_DMS_NOTIFICATIONS;
   });
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
 
   // Sync to local storage on changes
-  useEffect(() => { localStorage.setItem('rc_hr_employees', JSON.stringify(employees)); }, [employees]);
-  useEffect(() => { localStorage.setItem('rc_hr_departments', JSON.stringify(departments)); }, [departments]);
-  useEffect(() => { localStorage.setItem('rc_hr_openings', JSON.stringify(openings)); }, [openings]);
-  useEffect(() => { localStorage.setItem('rc_hr_candidates', JSON.stringify(candidates)); }, [candidates]);
-  useEffect(() => { localStorage.setItem('rc_hr_interviews', JSON.stringify(interviews)); }, [interviews]);
-  useEffect(() => { localStorage.setItem('rc_hr_activities', JSON.stringify(activities)); }, [activities]);
-  useEffect(() => { localStorage.setItem('rc_dms_folders', JSON.stringify(folders)); }, [folders]);
-  useEffect(() => { localStorage.setItem('rc_dms_documents', JSON.stringify(documents)); }, [documents]);
-  useEffect(() => { localStorage.setItem('rc_hrdms_notifications', JSON.stringify(notifications)); }, [notifications]);
+  useEffect(() => { appStore.setItem('rc_hr_employees', JSON.stringify(employees)); }, [employees]);
+  useEffect(() => { appStore.setItem('rc_hr_departments', JSON.stringify(departments)); }, [departments]);
+  useEffect(() => { appStore.setItem('rc_hr_openings', JSON.stringify(openings)); }, [openings]);
+  useEffect(() => { appStore.setItem('rc_hr_candidates', JSON.stringify(candidates)); }, [candidates]);
+  useEffect(() => { appStore.setItem('rc_hr_interviews', JSON.stringify(interviews)); }, [interviews]);
+  useEffect(() => { appStore.setItem('rc_hr_activities', JSON.stringify(activities)); }, [activities]);
+  useEffect(() => { appStore.setItem('rc_dms_folders', JSON.stringify(folders)); }, [folders]);
+  useEffect(() => { appStore.setItem('rc_dms_documents', JSON.stringify(documents)); }, [documents]);
+  useEffect(() => { appStore.setItem('rc_hrdms_notifications', JSON.stringify(notifications)); }, [notifications]);
 
   // Helper to add notification
   const addNotification = (type: HrDmsNotification['type'], message: string) => {
@@ -135,9 +136,9 @@ export default function BusinessHrDmsEngine({
         <div className="space-y-1 z-10">
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-mono tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold uppercase">
-              SPRINT 21 RELEASE
+              HR & Documents
             </span>
-            <span className="text-[10px] font-mono text-slate-500">• Centralized Operations Machine</span>
+            <span className="text-[10px] font-mono text-slate-500">• People and documents in one place</span>
           </div>
           <h2 className="text-xl md:text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
             <span>HR, Talent & Document Management System (DMS)</span>

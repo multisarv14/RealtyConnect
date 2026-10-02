@@ -2,6 +2,8 @@
  * RealtyConnect™ Sprint 12 - B2B Marketplace Module
  */
 
+import { currentOrgId, currentOrgName, currentUserEmail, currentUserName } from '../lib/identity';
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, Filter, MapPin, ShieldCheck, Heart, Share2, Phone, MessageSquare, Send, Mail, Info, FileText, 
@@ -187,7 +189,12 @@ interface BusinessMarketplaceProps {
   posts: FeedPost[];
   setPosts: React.Dispatch<React.SetStateAction<FeedPost[]>>;
   setActiveViewMode?: (view: any) => void;
+  // "Products" in the top menu shows goods only (materials, equipment); services stay under "Services".
+  productsOnly?: boolean;
 }
+
+// Categories that are goods rather than services.
+const PRODUCT_CATEGORIES: MarketplaceListing['category'][] = ['Construction Materials', 'Industrial Equipment'];
 
 // Seed listings inside B2B Marketplace
 export const INITIAL_MARKETPLACE_LISTINGS: MarketplaceListing[] = [
@@ -408,7 +415,8 @@ export default function BusinessMarketplace({
   showToast,
   posts,
   setPosts,
-  setActiveViewMode
+  setActiveViewMode,
+  productsOnly = false
 }: BusinessMarketplaceProps) {
 
   // Active View Tab: 'explore', 'details', 'my_marketplace'
@@ -417,7 +425,7 @@ export default function BusinessMarketplace({
   // Listings State
   const [listings, setListings] = useState<MarketplaceListing[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_marketplace_listings');
+      const saved = appStore.getItem('realtyconnect_marketplace_listings');
       if (saved) {
         return JSON.parse(saved);
       }
@@ -430,7 +438,7 @@ export default function BusinessMarketplace({
   // Saved Listings State
   const [savedListingIds, setSavedListingIds] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_saved_listings');
+      const saved = appStore.getItem('realtyconnect_saved_listings');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -441,7 +449,7 @@ export default function BusinessMarketplace({
   // Favorite Listing Ids State
   const [favListingIds, setFavListingIds] = useState<string[]>(() => {
     try {
-      const fav = localStorage.getItem('realtyconnect_fav_listings');
+      const fav = appStore.getItem('realtyconnect_fav_listings');
       if (fav) return JSON.parse(fav);
     } catch (e) {
       console.error(e);
@@ -452,7 +460,7 @@ export default function BusinessMarketplace({
   // Enquiries State
   const [enquiries, setEnquiries] = useState<ProductEnquiry[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_product_enquiries');
+      const saved = appStore.getItem('realtyconnect_product_enquiries');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -483,7 +491,7 @@ export default function BusinessMarketplace({
   const [enquiryModalListing, setEnquiryModalListing] = useState<MarketplaceListing | null>(null);
   const [enqMessage, setEnqMessage] = useState('');
   const [enqSenderName, setEnqSenderName] = useState(userSession ? 'MultiSarv Representative' : 'Sourcing Manager');
-  const [enqSenderEmail, setEnqSenderEmail] = useState(userSession?.email || 'procurement@multisarv.in');
+  const [enqSenderEmail, setEnqSenderEmail] = useState(userSession?.email || '');
   const [enqSenderPhone, setEnqSenderPhone] = useState('+91 98200 44021');
 
   // New Listing creation state
@@ -543,25 +551,27 @@ export default function BusinessMarketplace({
     return () => clearTimeout(timer);
   }, [searchQuery, filterCategory, filterSubcategory, filterBrand, filterLocation, filterPriceRange, filterAvailability, filterVerifiedOnly, filterPremiumOnly, filterFeaturedOnly, filterTrendingOnly, filterSort]);
 
-  // Synchronize localStorage on states update
+  // Synchronize appStore on states update
   useEffect(() => {
-    localStorage.setItem('realtyconnect_marketplace_listings', JSON.stringify(listings));
+    appStore.setItem('realtyconnect_marketplace_listings', JSON.stringify(listings));
   }, [listings]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_saved_listings', JSON.stringify(savedListingIds));
+    appStore.setItem('realtyconnect_saved_listings', JSON.stringify(savedListingIds));
   }, [savedListingIds]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_fav_listings', JSON.stringify(favListingIds));
+    appStore.setItem('realtyconnect_fav_listings', JSON.stringify(favListingIds));
   }, [favListingIds]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_product_enquiries', JSON.stringify(enquiries));
+    appStore.setItem('realtyconnect_product_enquiries', JSON.stringify(enquiries));
   }, [enquiries]);
 
   // Derived filters options
-  const categoryOptions = ['All', 'Construction Materials', 'Industrial Equipment', 'Professional Services', 'Financial Services'];
+  const categoryOptions = productsOnly
+    ? ['All', ...PRODUCT_CATEGORIES]
+    : ['All', 'Construction Materials', 'Industrial Equipment', 'Professional Services', 'Financial Services'];
   const locationOptions = useMemo(() => {
     const locs = listings.map(l => l.location.split(',')[0].trim());
     return ['All', ...Array.from(new Set(locs))];
@@ -584,6 +594,7 @@ export default function BusinessMarketplace({
   // Process filters
   const filteredListings = useMemo(() => {
     return listings.filter(item => {
+      if (productsOnly && !PRODUCT_CATEGORIES.includes(item.category)) return false;
       // Search text
       const query = searchQuery.toLowerCase().trim();
       const matchesSearch = !query || 
@@ -715,7 +726,7 @@ export default function BusinessMarketplace({
     );
 
     try {
-      const savedLeads = localStorage.getItem('realtyconnect_leads');
+      const savedLeads = appStore.getItem('realtyconnect_leads');
       let currentLeads = [];
       if (savedLeads) {
         currentLeads = JSON.parse(savedLeads);
@@ -728,7 +739,7 @@ export default function BusinessMarketplace({
         source: 'Marketplace',
         company: enquiryModalListing.businessName,
         contactPerson: enqSenderName || 'Sourcing Manager',
-        email: enqSenderEmail || 'procurement@multisarv.in',
+        email: enqSenderEmail || currentUserEmail(),
         mobile: enqSenderPhone || '+91 98200 44021',
         category: enquiryModalListing.category,
         productService: enquiryModalListing.name,
@@ -746,14 +757,14 @@ export default function BusinessMarketplace({
         ],
         followUps: []
       };
-      localStorage.setItem('realtyconnect_leads', JSON.stringify([newLead, ...currentLeads]));
+      appStore.setItem('realtyconnect_leads', JSON.stringify([newLead, ...currentLeads]));
     } catch (e) {
       console.error('Error auto capturing lead from marketplace', e);
     }
 
     // Automatically spawn a B2B Conversation
     try {
-      const conversationsJson = localStorage.getItem('realtyconnect_conversations');
+      const conversationsJson = appStore.getItem('realtyconnect_conversations');
       let conversationsList = conversationsJson ? JSON.parse(conversationsJson) : [];
       
       const newConversationId = `conv-mkt-${enquiryModalListing.id}`;
@@ -772,7 +783,7 @@ export default function BusinessMarketplace({
           priority: 'Normal' as const,
           pinned: false,
           archived: false,
-          assignedExecutive: 'Vikram Malhotra',
+          assignedExecutive: currentUserName(),
           relatedEntity: {
             type: 'Marketplace' as const,
             id: enquiryModalListing.id,
@@ -806,7 +817,7 @@ export default function BusinessMarketplace({
           ]
         };
         conversationsList.unshift(newConv);
-        localStorage.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
+        appStore.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
       }
     } catch (e) {
       console.error('Error syncing marketplace inquiry to conversations', e);
@@ -835,7 +846,7 @@ export default function BusinessMarketplace({
 
           // Append to B2B Messaging history!
           try {
-            const conversationsJson = localStorage.getItem('realtyconnect_conversations');
+            const conversationsJson = appStore.getItem('realtyconnect_conversations');
             if (conversationsJson) {
               let conversationsList = JSON.parse(conversationsJson);
               const convIdx = conversationsList.findIndex((c: any) => c.id === `conv-mkt-${targetListing.id}`);
@@ -852,7 +863,7 @@ export default function BusinessMarketplace({
                 conversationsList[convIdx].lastMessageText = autoReply;
                 conversationsList[convIdx].lastMessageTime = new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 conversationsList[convIdx].unreadCount = 1;
-                localStorage.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
+                appStore.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
               }
             }
           } catch (e) {}
@@ -896,8 +907,8 @@ export default function BusinessMarketplace({
       location: newListing.location || 'Mumbai, Maharashtra',
       deliveryAvailability: newListing.deliveryAvailability || 'Pan-India',
       availableQuantity: newListing.availableQuantity || 'On Demand',
-      businessId: 'ent-client',
-      businessName: 'MultiSarv India Pvt. Ltd. (Corporate Client)',
+      businessId: (currentOrgId() || 'ent-client'),
+      businessName: currentOrgName(),
       verifiedSeller: true,
       membershipLevel: 'Enterprise Platinum',
       rating: 5.0,
@@ -920,8 +931,8 @@ export default function BusinessMarketplace({
     const feedId = `post-mkt-${Date.now()}`;
     const mktFeedPost: FeedPost = {
       id: feedId,
-      companyId: 'ent-client',
-      companyName: 'MultiSarv India Pvt. Ltd. (Corporate Client)',
+      companyId: (currentOrgId() || 'ent-client'),
+      companyName: currentOrgName(),
       category: 'Contractors', // or Developers
       logoBg: 'bg-emerald-600',
       logoText: 'MS',
@@ -988,7 +999,7 @@ export default function BusinessMarketplace({
                   REALTYCONNECT™ CORE
                 </span>
                 <span className="text-[9px] font-mono text-slate-500 bg-slate-900/60 px-2 py-0.5 rounded border border-slate-800">
-                  SECURE B2B SPEC DISCOVERY
+                  Secure B2B Spec Discovery
                 </span>
               </div>
               <h2 className="text-xl font-display font-extrabold text-white mt-1.5 tracking-tight">Enterprise Product & Sourcing Catalog</h2>
@@ -1065,7 +1076,7 @@ export default function BusinessMarketplace({
               <div className="flex items-center justify-between">
                 <h3 className="font-display font-extrabold text-xs text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                   <Layers className="w-4 h-4 text-emerald-400" />
-                  Featured B2B Categories
+                  {productsOnly ? 'Product Categories' : 'Featured B2B Categories'}
                 </h3>
                 <span className="text-[10px] font-mono text-slate-500">Click to filter catalogs instantaneously</span>
               </div>
@@ -1099,7 +1110,7 @@ export default function BusinessMarketplace({
                     brands: 'National Trust Bank',
                     count: listings.filter(l => l.category === 'Financial Services').length
                   }
-                ].map((cat, idx) => (
+                ].filter(cat => !productsOnly || (PRODUCT_CATEGORIES as string[]).includes(cat.name)).map((cat, idx) => (
                   <div
                     key={idx}
                     onClick={() => {
@@ -1368,7 +1379,7 @@ export default function BusinessMarketplace({
                         <div className="space-y-2 relative z-10">
                           <div className="flex items-center justify-between text-[9px] font-mono">
                             <span className="text-slate-500 uppercase">{item.subcategory}</span>
-                            <span className="text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/25">FEATURED</span>
+                            <span className="text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/25">Featured</span>
                           </div>
                           
                           <div className="flex items-start gap-2.5">
@@ -1503,7 +1514,7 @@ export default function BusinessMarketplace({
                         <span className="text-4xl p-2 bg-slate-950/60 rounded-xl border border-slate-900 shadow-inner shrink-0">{catData.icon}</span>
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono tracking-widest uppercase text-slate-400">ACTIVE CATEGORY CATALOGUE</span>
+                            <span className="text-[10px] font-mono tracking-widest uppercase text-slate-400">Active Category Catalogue</span>
                             <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
                           </div>
                           <h3 className="font-display font-extrabold text-base text-white mt-1">{filterCategory}</h3>
@@ -1553,7 +1564,7 @@ export default function BusinessMarketplace({
                   
                   {/* Grid/List layout toggle */}
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-slate-500 mr-1.5 hidden sm:inline">LAYOUT VIEW</span>
+                    <span className="text-[10px] font-mono text-slate-500 mr-1.5 hidden sm:inline">Layout View</span>
                     <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-900">
                       <button
                         type="button"
@@ -1654,7 +1665,7 @@ export default function BusinessMarketplace({
                               {item.verifiedSeller && (
                                 <span className="inline-flex items-center gap-0.5 text-[8px] font-mono font-bold text-emerald-450 bg-emerald-500/5 px-1.5 py-0.5 rounded border border-emerald-500/10 uppercase shrink-0">
                                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                                  VERIFIED
+                                  Verified
                                 </span>
                               )}
                             </div>
@@ -1694,15 +1705,15 @@ export default function BusinessMarketplace({
                           {/* Middle KPIs block */}
                           <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-900/60 text-[9px] font-mono relative z-10 bg-slate-950/40 p-1.5 rounded-xl">
                             <div>
-                              <span className="text-slate-500 block uppercase tracking-wide">MIN ORDER QTY</span>
+                              <span className="text-slate-500 block uppercase tracking-wide">Min Order Qty</span>
                               <span className="text-slate-200 font-bold">{item.moq} {item.unit.split(' ')[0]}</span>
                             </div>
                             <div>
-                              <span className="text-slate-500 block uppercase tracking-wide">AVAILABILITY</span>
+                              <span className="text-slate-500 block uppercase tracking-wide">Availability</span>
                               <span className="text-slate-205 font-bold truncate block">{item.availableQuantity || 'In Stock'}</span>
                             </div>
                             <div>
-                              <span className="text-slate-500 block uppercase tracking-wide">SUPPLIER RATING</span>
+                              <span className="text-slate-500 block uppercase tracking-wide">Supplier Rating</span>
                               <span className="text-amber-400 font-bold flex items-center gap-0.5">
                                 <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
                                 {item.rating}
@@ -1831,7 +1842,7 @@ export default function BusinessMarketplace({
                               </h4>
                               <p className="text-[10px] text-slate-400 truncate flex items-center gap-1">
                                 <span className="text-slate-300 font-semibold">{item.businessName}</span>
-                                {item.verifiedSeller && <span className="text-[8px] font-mono text-emerald-400 font-bold bg-emerald-500/5 px-1 rounded border border-emerald-500/10">VERIFIED</span>}
+                                {item.verifiedSeller && <span className="text-[8px] font-mono text-emerald-400 font-bold bg-emerald-500/5 px-1 rounded border border-emerald-500/10">Verified</span>}
                               </p>
                             </div>
                           </div>
@@ -2046,7 +2057,7 @@ export default function BusinessMarketplace({
                       <div className="w-full border-t border-dashed border-slate-900/60 my-1"></div>
                       <span className="text-[8px] text-slate-500 text-center leading-normal">
                         PALLET WRAPPED CONTAINER LOAD<br />
-                        MOISTURE PROTECTED SHIELDING
+                        Moisture Protected Shielding
                       </span>
                     </div>
                   )}
@@ -2064,10 +2075,10 @@ export default function BusinessMarketplace({
                       }}
                     >
                       <div className="text-center font-mono space-y-1 p-4">
-                        <span className="text-emerald-400 text-base font-extrabold uppercase tracking-widest animate-pulse">SPEC MAGNIFIED 2.0X</span>
+                        <span className="text-emerald-400 text-base font-extrabold uppercase tracking-widest animate-pulse">Spec Magnified 2.0X</span>
                         <p className="text-[8px] text-slate-500 leading-normal">
                           COORDINATES: X: {zoomPosition.x.toFixed(1)}% | Y: {zoomPosition.y.toFixed(1)}%<br />
-                          HOVERING OVER PRIMARY SPEC MATRIX
+                          Hovering Over Primary Spec Matrix
                         </p>
                       </div>
                     </div>
@@ -2174,7 +2185,7 @@ export default function BusinessMarketplace({
                   <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-semibold uppercase border border-emerald-500/10">{selectedListing.category}</span>
                   <span className="text-[9px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">{selectedListing.subcategory}</span>
                   {selectedListing.featured && (
-                    <span className="text-[8px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/15 font-bold uppercase tracking-widest">FEATURED</span>
+                    <span className="text-[8px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/15 font-bold uppercase tracking-widest">Featured</span>
                   )}
                 </div>
                 <h3 className="font-display font-extrabold text-base text-white leading-snug tracking-tight mt-1">{selectedListing.name}</h3>
@@ -2280,14 +2291,14 @@ export default function BusinessMarketplace({
 
                     <div className="grid grid-cols-2 gap-2 text-[9px] font-mono py-2.5 border-y border-slate-900">
                       <div>
-                        <span className="text-slate-500 block">SENSEX RATING</span>
+                        <span className="text-slate-500 block">Sensex Rating</span>
                         <span className="text-slate-200 font-extrabold flex items-center gap-0.5 mt-0.5">
                           <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
                           {selectedListing.rating} / 5.0
                         </span>
                       </div>
                       <div>
-                        <span className="text-slate-500 block">ESTABLISHED</span>
+                        <span className="text-slate-500 block">Established</span>
                         <span className="text-slate-200 font-extrabold mt-0.5 block truncate" title={sDetails.yearsInBusiness}>
                           {sDetails.yearsInBusiness.split(' ')[2] || '2012'} (Live)
                         </span>
@@ -2348,7 +2359,7 @@ export default function BusinessMarketplace({
               <div className="bg-slate-950 p-4 rounded-2xl border border-slate-900 space-y-3 shadow-md">
                 <span className="text-[9px] font-mono text-slate-500 block uppercase font-bold tracking-widest border-b border-slate-900 pb-2">Wholesale Sourcing Slabs</span>
                 <div className="space-y-1">
-                  <span className="text-slate-500 block text-[9px] font-mono">INDICATIVE WHOLESALE PRICE</span>
+                  <span className="text-slate-500 block text-[9px] font-mono">Indicative Wholesale Price</span>
                   <span className="text-sm font-display font-extrabold text-emerald-400 block">
                     {selectedListing.priceOnRequest ? 'Price On Request' : `${selectedListing.price} / ${selectedListing.unit.split(' ')[0]}`}
                   </span>
@@ -2422,22 +2433,22 @@ export default function BusinessMarketplace({
                   MS
                 </div>
                 <div>
-                  <h4 className="font-bold text-xs text-slate-200">MultiSarv India Pvt. Ltd.</h4>
+                  <h4 className="font-bold text-xs text-slate-200">{currentOrgName()}</h4>
                   <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded uppercase">Enterprise Platinum</span>
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-3 text-center py-2.5 border-y border-slate-900/60 font-mono text-[9px]">
                 <div>
-                  <span className="text-slate-500 block">MY LISTINGS</span>
-                  <span className="text-slate-200 font-bold">{listings.filter(l => l.businessId === 'ent-client').length} Items</span>
+                  <span className="text-slate-500 block">MY Listings</span>
+                  <span className="text-slate-200 font-bold">{listings.filter(l => l.businessId === (currentOrgId() || 'ent-client')).length} Items</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">SAVED</span>
+                  <span className="text-slate-500 block">Saved</span>
                   <span className="text-slate-200 font-bold">{savedListingIds.length} Products</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">ENQUIRIES</span>
+                  <span className="text-slate-500 block">Enquiries</span>
                   <span className="text-slate-200 font-bold">{enquiries.length} Active</span>
                 </div>
               </div>
@@ -2765,13 +2776,13 @@ export default function BusinessMarketplace({
                 <span className="text-[10px] text-slate-500 font-mono">Published under MultiSarv ID</span>
               </h4>
 
-              {listings.filter(l => l.businessId === 'ent-client').length === 0 ? (
+              {listings.filter(l => l.businessId === (currentOrgId() || 'ent-client')).length === 0 ? (
                 <div className="p-8 text-center bg-slate-950/20 rounded-xl border border-slate-900">
                   <p className="text-slate-500 italic">No products catalogued yet. Click "Catalogue Product" above to list your commercial supplies!</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {listings.filter(l => l.businessId === 'ent-client').map((item) => (
+                  {listings.filter(l => l.businessId === (currentOrgId() || 'ent-client')).map((item) => (
                     <div 
                       key={item.id}
                       className="p-3 bg-slate-950 border border-slate-900 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
@@ -2831,7 +2842,7 @@ export default function BusinessMarketplace({
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[10px] font-mono border-b border-slate-900 pb-2 gap-2">
                         <div className="space-y-0.5">
-                          <span className="text-slate-500 block uppercase">PRODUCT ENQUIRED</span>
+                          <span className="text-slate-500 block uppercase">Product Enquired</span>
                           <span className="text-slate-200 font-bold block truncate max-w-sm">{enq.listingName}</span>
                         </div>
                         <div className="text-right shrink-0">
@@ -2873,7 +2884,7 @@ export default function BusinessMarketplace({
                             const newConversationId = `conv-mkt-${enq.listingId}`;
                             // Force check in conversations list
                             try {
-                              const conversationsJson = localStorage.getItem('realtyconnect_conversations');
+                              const conversationsJson = appStore.getItem('realtyconnect_conversations');
                               let conversationsList = conversationsJson ? JSON.parse(conversationsJson) : [];
                               const exists = conversationsList.some((c: any) => c.id === newConversationId);
                               
@@ -2891,7 +2902,7 @@ export default function BusinessMarketplace({
                                   priority: 'Normal' as const,
                                   pinned: false,
                                   archived: false,
-                                  assignedExecutive: 'Vikram Malhotra',
+                                  assignedExecutive: currentUserName(),
                                   relatedEntity: {
                                     type: 'Marketplace' as const,
                                     id: enq.listingId,
@@ -2932,11 +2943,11 @@ export default function BusinessMarketplace({
                                   newConv.lastMessageText = enq.reply;
                                 }
                                 conversationsList.unshift(newConv);
-                                localStorage.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
+                                appStore.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
                               }
                             } catch (e) {}
 
-                            localStorage.setItem('realtyconnect_active_conversation_id', newConversationId);
+                            appStore.setItem('realtyconnect_active_conversation_id', newConversationId);
                             if (setActiveViewMode) {
                               setActiveViewMode('messaging');
                               showToast(`Continuing conversation stream with ${enq.sellerName}`, 'success');

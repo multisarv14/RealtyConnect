@@ -210,7 +210,7 @@ export default function NotificationSimulator({ notifications, onTriggerNotifica
                           </span>
                         </div>
                         <p className="text-xs text-slate-200 mt-1 leading-relaxed">{noti.content}</p>
-                        <span className="text-[9px] text-slate-500 font-mono block mt-1.5">TIMESTAMP: {noti.timestamp}</span>
+                        <span className="text-[9px] text-slate-500 font-mono block mt-1.5">Timestamp: {noti.timestamp}</span>
                       </div>
                     </div>
 
@@ -218,12 +218,12 @@ export default function NotificationSimulator({ notifications, onTriggerNotifica
                       {isSent ? (
                         <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1 font-bold">
                           <CheckCircle className="w-3 h-3" />
-                          SENT
+                          Sent
                         </span>
                       ) : (
                         <span className="text-[9px] font-mono text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20 flex items-center gap-1 font-bold animate-pulse">
                           <Clock className="w-3 h-3" />
-                          QUEUED
+                          Queued
                         </span>
                       )}
                     </div>

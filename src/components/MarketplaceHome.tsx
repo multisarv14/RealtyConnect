@@ -252,7 +252,7 @@ export default function MarketplaceHome({
         <div className="max-w-4xl mx-auto space-y-6 relative z-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/25 rounded-full text-emerald-400 font-mono text-[10px] font-bold tracking-widest uppercase">
             <Sparkles className="w-3.5 h-3.5" />
-            INDIA'S PREMIER B2B REAL ESTATE MARKETPLACE
+            India's Premier B2B Real Estate Marketplace
           </div>
 
           <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white leading-tight font-display">
@@ -344,7 +344,7 @@ export default function MarketplaceHome({
 
             {/* Category Dropdown */}
             <div className="md:col-span-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 flex items-center gap-2 text-slate-300">
-              <span className="text-[10px] text-slate-500 font-mono flex-shrink-0 uppercase font-bold">WHAT:</span>
+              <span className="text-[10px] text-slate-500 font-mono flex-shrink-0 uppercase font-bold">What:</span>
               <select
                 value={searchCategory}
                 onChange={(e) => setSearchCategory(e.target.value)}
@@ -365,7 +365,7 @@ export default function MarketplaceHome({
 
             {/* Location Selector */}
             <div className="md:col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 flex items-center gap-2 text-slate-300">
-              <span className="text-[10px] text-slate-500 font-mono flex-shrink-0 uppercase font-bold">WHERE:</span>
+              <span className="text-[10px] text-slate-500 font-mono flex-shrink-0 uppercase font-bold">Where:</span>
               <select
                 value={searchLocation}
                 onChange={(e) => setSearchLocation(e.target.value)}
@@ -523,11 +523,11 @@ export default function MarketplaceHome({
               <div className="flex items-center gap-1 absolute top-3 right-3">
                 <span className="text-[8px] bg-amber-500/10 text-amber-400 border border-amber-500/25 px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider flex items-center gap-0.5">
                   <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-                  PREMIUM
+                  Premium
                 </span>
                 <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider flex items-center gap-0.5">
                   <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" />
-                  VERIFIED
+                  Verified
                 </span>
               </div>
 
@@ -920,7 +920,7 @@ export default function MarketplaceHome({
       {/* 10. MEMBERSHIP PLANS (Pricing matrix) */}
       <section id="membership-plans-section" className="px-4 md:px-6 max-w-7xl mx-auto space-y-6">
         <div className="border-b border-slate-850 pb-3 text-center max-w-2xl mx-auto space-y-1.5">
-          <span className="text-[9.5px] font-mono text-emerald-400 uppercase tracking-widest font-extrabold">GROW YOUR B2B PRESENCE</span>
+          <span className="text-[9.5px] font-mono text-emerald-400 uppercase tracking-widest font-extrabold">Grow Your B2B Presence</span>
           <h3 className="text-lg sm:text-xl font-extrabold text-white font-display">
             Premium Corporate Membership Plans
           </h3>
@@ -942,7 +942,7 @@ export default function MarketplaceHome({
                 <div className="flex items-center justify-between border-b border-slate-850 pb-3">
                   <span className="text-xs font-extrabold text-slate-100">{plan.name}</span>
                   {plan.premium && (
-                    <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-1.5 rounded font-mono font-bold uppercase">PRO</span>
+                    <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-1.5 rounded font-mono font-bold uppercase">Pro</span>
                   )}
                 </div>
 

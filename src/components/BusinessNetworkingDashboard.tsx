@@ -924,11 +924,11 @@ export default function BusinessNetworkingDashboard({
 
                     <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-850/60 grid grid-cols-2 gap-2 text-[10px] font-mono">
                       <div>
-                        <span className="text-slate-500 block uppercase">REQUIRED VOLUME:</span>
+                        <span className="text-slate-500 block uppercase">Required Volume:</span>
                         <span className="text-slate-200 font-bold">{rfq.quantity}</span>
                       </div>
                       <div>
-                        <span className="text-slate-500 block uppercase">EST BUDGET:</span>
+                        <span className="text-slate-500 block uppercase">Est Budget:</span>
                         <span className="text-amber-500 font-bold">{rfq.estimatedValue}</span>
                       </div>
                     </div>
@@ -1032,7 +1032,7 @@ export default function BusinessNetworkingDashboard({
                       </div>
 
                       <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-850/60 flex justify-between items-center text-[10px] font-mono">
-                        <span className="text-slate-500 block uppercase">VALUATION:</span>
+                        <span className="text-slate-500 block uppercase">Valuation:</span>
                         <strong className="text-amber-500">{prop.estimatedValue}</strong>
                       </div>
 
@@ -1106,11 +1106,11 @@ export default function BusinessNetworkingDashboard({
 
                       <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-850/60 flex gap-4 text-[10px] font-mono">
                         <div className="flex-1">
-                          <span className="text-slate-500 block">DATE:</span>
+                          <span className="text-slate-500 block">Date:</span>
                           <span className="text-slate-200 font-bold">{meet.date}</span>
                         </div>
                         <div className="flex-1">
-                          <span className="text-slate-500 block">TIME:</span>
+                          <span className="text-slate-500 block">Time:</span>
                           <span className="text-slate-200 font-bold">{meet.time}</span>
                         </div>
                       </div>
@@ -1151,10 +1151,10 @@ export default function BusinessNetworkingDashboard({
                     </div>
                     <p className="text-slate-300 italic">"Purpose: {visit.purpose}"</p>
                     <div className="bg-slate-900 p-2 rounded-xl grid grid-cols-2 sm:grid-cols-4 gap-4 text-[9px] font-mono border border-slate-850/60">
-                      <div><span className="text-slate-500 block">DATE:</span><span className="text-slate-200 font-bold">{visit.date}</span></div>
-                      <div><span className="text-slate-500 block">TIME:</span><span className="text-slate-200 font-bold">{visit.time}</span></div>
-                      <div><span className="text-slate-500 block">LIAISON DEED:</span><span className="text-emerald-400 font-bold">VERIFIED</span></div>
-                      <div><span className="text-slate-500 block">REF BLOCK:</span><span className="text-slate-400">{visit.id}</span></div>
+                      <div><span className="text-slate-500 block">Date:</span><span className="text-slate-200 font-bold">{visit.date}</span></div>
+                      <div><span className="text-slate-500 block">Time:</span><span className="text-slate-200 font-bold">{visit.time}</span></div>
+                      <div><span className="text-slate-500 block">Liaison Deed:</span><span className="text-emerald-400 font-bold">Verified</span></div>
+                      <div><span className="text-slate-500 block">Ref Block:</span><span className="text-slate-400">{visit.id}</span></div>
                     </div>
                   </div>
                 ))}

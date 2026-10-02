@@ -1,3 +1,5 @@
+import { currentUserName } from '../lib/identity';
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
@@ -164,7 +166,7 @@ export default function BusinessMeetingsCalendar({
 }: BusinessMeetingsCalendarProps) {
   // Meetings state
   const [meetings, setMeetings] = useState<CalendarMeeting[]>(() => {
-    const saved = localStorage.getItem('realtyconnect_meetings');
+    const saved = appStore.getItem('realtyconnect_meetings');
     if (saved) {
       try { return JSON.parse(saved); } catch (e) { console.error(e); }
     }
@@ -172,7 +174,7 @@ export default function BusinessMeetingsCalendar({
   });
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_meetings', JSON.stringify(meetings));
+    appStore.setItem('realtyconnect_meetings', JSON.stringify(meetings));
   }, [meetings]);
 
   // Main navigation tabs: 'directory' (Directory, Card, List views) or 'calendar'
@@ -187,7 +189,7 @@ export default function BusinessMeetingsCalendar({
   // Search and Filter states
   const [searchTerm, setSearchTerm] = useState('');
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
-    const history = localStorage.getItem('realtyconnect_meeting_search_history');
+    const history = appStore.getItem('realtyconnect_meeting_search_history');
     return history ? JSON.parse(history) : ['Apex', 'RFQ', 'Malhotra', 'Site Visit'];
   });
 
@@ -210,9 +212,9 @@ export default function BusinessMeetingsCalendar({
   // Selected meeting for inspection panel
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(() => {
     try {
-      const redirectedId = localStorage.getItem('realtyconnect_selected_meeting_id');
+      const redirectedId = appStore.getItem('realtyconnect_selected_meeting_id');
       if (redirectedId) {
-        localStorage.removeItem('realtyconnect_selected_meeting_id');
+        appStore.removeItem('realtyconnect_selected_meeting_id');
         return redirectedId;
       }
     } catch (e) {}
@@ -222,9 +224,9 @@ export default function BusinessMeetingsCalendar({
 
   useEffect(() => {
     try {
-      const redirectedId = localStorage.getItem('realtyconnect_selected_meeting_id');
+      const redirectedId = appStore.getItem('realtyconnect_selected_meeting_id');
       if (redirectedId) {
-        localStorage.removeItem('realtyconnect_selected_meeting_id');
+        appStore.removeItem('realtyconnect_selected_meeting_id');
         setSelectedMeetingId(redirectedId);
       }
     } catch (e) {}
@@ -240,7 +242,7 @@ export default function BusinessMeetingsCalendar({
   const [formCompany, setFormCompany] = useState('');
   const [formCompanyId, setFormCompanyId] = useState('');
   const [formContactPerson, setFormContactPerson] = useState('');
-  const [formOrganizer, setFormOrganizer] = useState('Vikram Malhotra');
+  const [formOrganizer, setFormOrganizer] = useState(currentUserName());
   const [formParticipants, setFormParticipants] = useState<string[]>([]);
   const [participantInput, setParticipantInput] = useState('');
   const [formLeadId, setFormLeadId] = useState('');
@@ -317,8 +319,8 @@ export default function BusinessMeetingsCalendar({
       if (initialCreateWithPreFill.meetingMode) setFormMode(initialCreateWithPreFill.meetingMode);
       if (initialCreateWithPreFill.priority) setFormPriority(initialCreateWithPreFill.priority);
       
-      setFormOrganizer('Vikram Malhotra');
-      setFormParticipants(['Vikram Malhotra', initialCreateWithPreFill.contactPerson || 'Representative']);
+      setFormOrganizer(currentUserName());
+      setFormParticipants([currentUserName(), initialCreateWithPreFill.contactPerson || 'Representative']);
 
       setEditingMeeting(null);
       setIsFormModalOpen(true);
@@ -329,10 +331,10 @@ export default function BusinessMeetingsCalendar({
   // Handle storage-based prefill fallback for decoupled modules
   useEffect(() => {
     try {
-      const savedPrefill = localStorage.getItem('realtyconnect_prefill_meeting');
+      const savedPrefill = appStore.getItem('realtyconnect_prefill_meeting');
       if (savedPrefill) {
         const data = JSON.parse(savedPrefill);
-        localStorage.removeItem('realtyconnect_prefill_meeting');
+        appStore.removeItem('realtyconnect_prefill_meeting');
         resetFormFields();
         if (data.title) setFormTitle(data.title);
         if (data.meetingType) setFormType(data.meetingType);
@@ -349,7 +351,7 @@ export default function BusinessMeetingsCalendar({
         if (data.location) setFormLocation(data.location);
         if (data.meetingMode) setFormMode(data.meetingMode);
         if (data.priority) setFormPriority(data.priority);
-        setFormParticipants(['Vikram Malhotra', data.contactPerson || 'Representative']);
+        setFormParticipants([currentUserName(), data.contactPerson || 'Representative']);
         setEditingMeeting(null);
         setIsFormModalOpen(true);
       }
@@ -362,8 +364,8 @@ export default function BusinessMeetingsCalendar({
     setFormCompany('');
     setFormCompanyId('');
     setFormContactPerson('');
-    setFormOrganizer('Vikram Malhotra');
-    setFormParticipants(['Vikram Malhotra']);
+    setFormOrganizer(currentUserName());
+    setFormParticipants([currentUserName()]);
     setParticipantInput('');
     setFormLeadId('');
     setFormRfqId('');
@@ -528,12 +530,12 @@ export default function BusinessMeetingsCalendar({
     const cleanTerm = term.trim();
     const updated = [cleanTerm, ...recentSearches.filter(s => s !== cleanTerm)].slice(0, 5);
     setRecentSearches(updated);
-    localStorage.setItem('realtyconnect_meeting_search_history', JSON.stringify(updated));
+    appStore.setItem('realtyconnect_meeting_search_history', JSON.stringify(updated));
   };
 
   const clearRecentSearches = () => {
     setRecentSearches([]);
-    localStorage.removeItem('realtyconnect_meeting_search_history');
+    appStore.removeItem('realtyconnect_meeting_search_history');
     showToast('Search history cleared.', 'info');
   };
 
@@ -623,7 +625,7 @@ export default function BusinessMeetingsCalendar({
       relatedCompany: selectedMeeting.relatedCompany,
       companyId: selectedMeeting.companyId,
       contactPerson: selectedMeeting.contactPerson,
-      organizer: 'Vikram Malhotra',
+      organizer: currentUserName(),
       participants: selectedMeeting.participants,
       relatedLeadId: selectedMeeting.relatedLeadId,
       relatedRfqId: selectedMeeting.relatedRfqId,
@@ -800,7 +802,7 @@ export default function BusinessMeetingsCalendar({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-[9px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800/40 tracking-widest font-bold uppercase">Sprint 15</span>
+              <span className="font-mono text-[9px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800/40 tracking-widest font-bold uppercase">Calendar</span>
               <span className="font-mono text-[9px] bg-slate-950 text-slate-400 px-2 py-0.5 rounded border border-slate-800 tracking-wider">Enterprise Scheduling</span>
             </div>
             <h1 className="text-xl font-bold font-display mt-1 text-white tracking-tight flex items-center gap-2">
@@ -815,21 +817,21 @@ export default function BusinessMeetingsCalendar({
         {/* Dynamic KPI Widget Strip */}
         <div className="flex flex-wrap items-center gap-3 bg-slate-950/60 border border-slate-800/60 p-3 rounded-xl md:self-stretch">
           <div className="px-3 border-r border-slate-800">
-            <span className="block text-[9px] uppercase tracking-wider font-mono text-slate-500">TODAY'S MEETINGS</span>
+            <span className="block text-[9px] uppercase tracking-wider font-mono text-slate-500">Today's Meetings</span>
             <span className="text-sm font-bold font-mono text-emerald-400">
               {meetings.filter(m => m.meetingDate === '2026-07-19').length}
             </span>
           </div>
           <div className="px-3 border-r border-slate-800">
-            <span className="block text-[9px] uppercase tracking-wider font-mono text-slate-500">UPCOMING</span>
+            <span className="block text-[9px] uppercase tracking-wider font-mono text-slate-500">Upcoming</span>
             <span className="text-sm font-bold font-mono text-sky-400">{totalScheduled}</span>
           </div>
           <div className="px-3 border-r border-slate-800">
-            <span className="block text-[9px] uppercase tracking-wider font-mono text-slate-500">COMPLETED</span>
+            <span className="block text-[9px] uppercase tracking-wider font-mono text-slate-500">Completed</span>
             <span className="text-sm font-bold font-mono text-slate-400">{totalCompleted}</span>
           </div>
           <div className="px-3">
-            <span className="block text-[9px] uppercase tracking-wider font-mono text-slate-500">PENDING CONFIRM</span>
+            <span className="block text-[9px] uppercase tracking-wider font-mono text-slate-500">Pending Confirm</span>
             <span className="text-sm font-bold font-mono text-amber-400">{pendingConfirmations}</span>
           </div>
         </div>
@@ -1570,7 +1572,7 @@ export default function BusinessMeetingsCalendar({
                   <button
                     onClick={() => {
                       if (setActiveViewMode) {
-                        localStorage.setItem('realtyconnect_active_lead_id', selectedMeeting.relatedLeadId);
+                        appStore.setItem('realtyconnect_active_lead_id', selectedMeeting.relatedLeadId);
                         setActiveViewMode('lead_management');
                         showToast(`Routing to Lead CRM profile: ${selectedMeeting.relatedLeadId}`, 'success');
                       }

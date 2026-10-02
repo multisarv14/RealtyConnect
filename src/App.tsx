@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { 
   Cpu, 
   Database, 
@@ -27,6 +28,10 @@ import {
 
 import { AuditLog, SystemConfig, SystemNotification } from './types';
 import LandingPortal from './components/LandingPortal';
+import * as authApi from './lib/api';
+import { api, errorMessage, type AuthMeta, type RegisterInput, type Session } from './lib/api';
+import { appStore } from './lib/appStore';
+import { setCurrentIdentity } from './lib/identity';
 
 const DocViewer = React.lazy(() => import('./components/DocViewer'));
 const AuthSimulator = React.lazy(() => import('./components/AuthSimulator'));
@@ -37,72 +42,45 @@ const NotificationSimulator = React.lazy(() => import('./components/Notification
 const LogsViewer = React.lazy(() => import('./components/LogsViewer'));
 const RegistrationOnboarding = React.lazy(() => import('./components/RegistrationOnboarding'));
 
-// Deterministic 64-char Hex Hash simulation for Rule LOG-02
-function simulateSHA256(input: string): string {
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    const char = input.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash;
-  }
-  let hex = Math.abs(hash).toString(16).padStart(8, '0');
-  while (hex.length < 64) {
-    hex += Math.abs((hash * (hex.length + 1)) % 16).toString(16);
-  }
-  return hex;
-}
-
-const INITIAL_CONFIGS: SystemConfig[] = [
+// Shown until the server's values arrive (and if it cannot be reached).
+const DEFAULT_CONFIGS: SystemConfig[] = [
   { key: 'MAINTENANCE_MODE', value: 'false', description: 'Restricts active system logins exclusively to accounts holding admin roles.', type: 'boolean', category: 'System' },
   { key: 'MAX_UPLOAD_SIZE_MB', value: '10', description: 'Maximum permissible individual binary size for the quarantine uploader.', type: 'number', category: 'Storage' },
   { key: 'BRUTE_FORCE_THRESHOLD', value: '5', description: 'Consecutive incorrect authentication attempts before account lock triggers.', type: 'number', category: 'Security' },
   { key: 'AUDIT_LOG_ROTATION_DAYS', value: '90', description: 'Interval threshold for retaining compliance and audit chains before archiving.', type: 'number', category: 'Logging' }
 ];
 
+const utcStamp = (length: number) => new Date().toISOString().replace('T', ' ').substr(0, length);
+
 export default function App() {
   const [viewMode, setViewMode] = useState<'business' | 'onboarding' | 'foundation'>('business');
   const [activeTab, setActiveTab] = useState<'blueprint' | 'auth' | 'masters' | 'config' | 'file' | 'noti' | 'logs'>('blueprint');
-  const [userSession, setUserSession] = useState<{ 
-    email: string; 
-    role: string; 
-    permissions: string[]; 
-    subscriptionPlan?: string; 
-    organizationName?: string; 
-    reraRegistration?: string; 
-  } | null>(null);
-  const [configs, setConfigs] = useState<SystemConfig[]>(INITIAL_CONFIGS);
-  
-  // Decoupled notification state
-  const [notifications, setNotifications] = useState<SystemNotification[]>([
-    { id: 'n1', type: 'in_app', recipient: 'SYSTEM_OPERATOR', content: 'Platform Foundation container booted successfully on port 3000.', status: 'sent', timestamp: '2026-07-16 07:10' }
-  ]);
 
-  // Cryptographically chained compliance logs conforming to Rule LOG-01 and LOG-02
-  const [logs, setLogs] = useState<AuditLog[]>([
-    {
-      id: 'L-10001',
-      timestamp: '2026-07-16 07:10:00',
-      userId: 'SYSTEM',
-      userRole: 'SYSTEM_OPERATOR',
-      action: 'PLATFORM_DOCKER_BOOT',
-      entity: 'servers',
-      entityId: 'realtyconnect-foundation-v1',
-      status: 'SUCCESS',
-      details: 'Container image booted on port 3000. Reverse-proxy routing enabled.',
-      ipAddress: '127.0.0.1',
-      chainHash: simulateSHA256('L-10001:SYSTEM:PLATFORM_DOCKER_BOOT:realtyconnect-foundation-v1')
-    }
-  ]);
+  // True until we know whether the browser still holds a live session.
+  const [booting, setBooting] = useState(true);
+  const [userSession, setUserSession] = useState<Session | null>(null);
+  // Log/notification callbacks are handed to many modules; the ref lets them see the current session without re-binding.
+  const sessionRef = useRef<Session | null>(null);
+  const [authMeta, setAuthMeta] = useState<AuthMeta | null>(null);
+  const [landingView, setLandingView] = useState('dashboard');
+
+  const [configs, setConfigs] = useState<SystemConfig[]>(DEFAULT_CONFIGS);
+  const [notifications, setNotifications] = useState<SystemNotification[]>([]);
+
+  // Newest first. Signed-in activity is recorded by the server in a SHA-256 hash chain (Rules LOG-01, LOG-02).
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const localLogSeq = useRef(0);
 
   // Active time state for top bar
-  const [currentTime, setCurrentTime] = useState(new Date().toISOString().replace('T', ' ').substr(0, 19));
+  const [currentTime, setCurrentTime] = useState(utcStamp(19));
 
   // Stateful custom toast alert container (non-blocking for iframes)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // Theme Management (Light / Dark Mode State and Persistence)
   const [isLightMode, setIsLightMode] = useState<boolean>(() => {
-    return localStorage.getItem('realtyconnect_theme') === 'light';
+    // Light is the default; a visitor who chose dark keeps it.
+    return localStorage.getItem('realtyconnect_theme') !== 'dark';
   });
 
   useEffect(() => {
@@ -115,118 +93,222 @@ export default function App() {
     }
   }, [isLightMode]);
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setTimeout(() => {
       setToast({ message, type });
     }, 0);
     setTimeout(() => {
       setToast(null);
     }, 4500);
-  };
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentTime(new Date().toISOString().replace('T', ' ').substr(0, 19));
+      setCurrentTime(utcStamp(19));
     }, 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Central log trigger - appends and cryptographically chains next block
-  const triggerLog = (
+  const canViewAuditLogs = !!userSession?.permissions.includes('VIEW_AUDIT_LOGS');
+
+  const refreshAuditLogs = useCallback(() => {
+    api<AuditLog[]>('GET', '/audit-logs?limit=300')
+      .then(setLogs)
+      .catch(err => console.warn('Could not load audit logs', err));
+  }, []);
+
+  // ---------- Session lifecycle ----------
+
+  const enterWorkspace = useCallback(async (session: Session, view = 'dashboard') => {
+    await appStore.hydrate();
+    sessionRef.current = session;
+    setCurrentIdentity(session);
+    // Swap the workspace in one synchronous render: modules of the previous session must
+    // unmount before they can write their state into the freshly loaded store.
+    flushSync(() => {
+      setLandingView(view);
+      setUserSession(session);
+      setLogs([]);
+    });
+    api<SystemNotification[]>('GET', '/notifications')
+      .then(setNotifications)
+      .catch(err => console.warn('Could not load notifications', err));
+    if (session.permissions.includes('VIEW_AUDIT_LOGS')) refreshAuditLogs();
+  }, [refreshAuditLogs]);
+
+  const leaveWorkspace = useCallback(() => {
+    appStore.reset();
+    sessionRef.current = null;
+    setCurrentIdentity(null);
+    flushSync(() => {
+      setUserSession(null);
+      setLogs([]);
+      setNotifications([]);
+    });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [meta, serverConfigs, session] = await Promise.all([
+        api<AuthMeta>('GET', '/meta').catch(() => null),
+        api<SystemConfig[]>('GET', '/configs').catch(() => null),
+        authApi.restoreSession().catch(() => null)
+      ]);
+      if (cancelled) return;
+      if (meta) setAuthMeta(meta);
+      if (serverConfigs) setConfigs(serverConfigs);
+      if (session) {
+        try {
+          await enterWorkspace(session);
+        } catch (err) {
+          showToast(errorMessage(err), 'error');
+        }
+      }
+      if (!meta) showToast('Cannot reach the RealtyConnect server. Sign-in and saving are unavailable until it is back.', 'error');
+      setBooting(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enterWorkspace, showToast]);
+
+  useEffect(() => {
+    const offExpired = authApi.onSessionExpired(() => {
+      if (!sessionRef.current) return;
+      leaveWorkspace();
+      showToast('Your session has expired. Please sign in again.', 'info');
+    });
+    const offStoreError = appStore.onError(message => showToast(message, 'error'));
+    return () => {
+      offExpired();
+      offStoreError();
+    };
+  }, [leaveWorkspace, showToast]);
+
+  const handleLogin = useCallback(async (email: string, password: string, role?: string, view = 'dashboard') => {
+    await appStore.flushAll();
+    const session = await authApi.login(email, password, role);
+    await enterWorkspace(session, view);
+    showToast(`Signed in as ${session.role} for ${session.organizationName}.`, 'success');
+  }, [enterWorkspace, showToast]);
+
+  const handleRegister = useCallback(async (input: RegisterInput, view = 'dashboard') => {
+    const session = await authApi.register(input);
+    await enterWorkspace(session, view);
+    showToast(`Account created. Welcome, ${session.organizationName}!`, 'success');
+  }, [enterWorkspace, showToast]);
+
+  const handleSwitchRole = useCallback(async (role: string) => {
+    await appStore.flushAll();
+    await enterWorkspace(await authApi.switchRole(role));
+  }, [enterWorkspace]);
+
+  // Role permissions can change while signed in (Rule AUTH-07); re-read what this session may do.
+  const reloadSession = useCallback(async () => {
+    const { session } = await api<{ session: Session }>('GET', '/auth/me');
+    sessionRef.current = session;
+    setCurrentIdentity(session);
+    setUserSession(session);
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    await appStore.flushAll();
+    await authApi.logout().catch(() => undefined);
+    leaveWorkspace();
+  }, [leaveWorkspace]);
+
+  // ---------- Audit trail, notifications, configuration ----------
+
+  const triggerLog = useCallback((
     action: string, 
     entity: string, 
     entityId: string, 
     status: 'SUCCESS' | 'FAILURE' | 'WARNING', 
     details: string
   ) => {
-    const timestamp = new Date().toISOString().replace('T', ' ').substr(0, 19);
-    const userId = userSession?.email || 'SYSTEM';
-    const userRole = userSession?.role || 'SYSTEM_OPERATOR';
-    const ipAddress = '10.240.12.84'; // Simulated private container subnet IP
-
-    setLogs(prev => {
-      const nextId = `L-${prev.length + 10002}`;
-      const prevLog = prev[0]; // prev is sorted descending (newest first)
-      const prevHash = prevLog?.chainHash || '00000000000000000000000000000000';
-      
-      const currentBlockData = `${prevHash}:${nextId}:${timestamp}:${userId}:${userRole}:${action}:${entity}:${entityId}:${status}:${details}`;
-      const chainHash = simulateSHA256(currentBlockData);
-
-      const newLog: AuditLog = {
-        id: nextId,
-        timestamp,
-        userId,
-        userRole,
+    if (!sessionRef.current) {
+      // Activity before sign-in is only listed in this browser; the server records authenticated events.
+      const local: AuditLog = {
+        id: `local-${++localLogSeq.current}`,
+        timestamp: utcStamp(19),
+        userId: 'ANONYMOUS',
+        userRole: 'VISITOR',
         action,
         entity,
         entityId,
         status,
         details,
-        ipAddress,
-        chainHash
+        ipAddress: 'this browser',
+        chainHash: 'not recorded (sign in to write to the audit chain)'
       };
+      setLogs(prev => [local, ...prev]);
+      return;
+    }
 
-      return [newLog, ...prev];
-    });
-  };
+    api<AuditLog>('POST', '/audit-logs', {
+      action: action.slice(0, 100),
+      entity: entity.slice(0, 50),
+      entityId: String(entityId ?? '').slice(0, 200) || 'n/a',
+      status,
+      details: details.slice(0, 2000)
+    })
+      .then(log => setLogs(prev => [log, ...prev]))
+      .catch(err => console.warn('Audit event was not recorded', err));
+  }, []);
 
-  // Central notification dispatcher
-  const triggerNotification = (type: SystemNotification['type'], recipient: string, content: string) => {
-    const notiId = `noti-${Math.random().toString(36).substr(2, 5)}`;
-    const newNoti: SystemNotification = {
-      id: notiId,
-      type,
-      recipient,
-      content,
-      status: 'queued',
-      timestamp: new Date().toISOString().replace('T', ' ').substr(0, 16)
-    };
-
-    setTimeout(() => {
-      setNotifications(prev => [newNoti, ...prev]);
-    }, 0);
-
-    // Simulate async dispatch queue
-    setTimeout(() => {
-      setNotifications(prev => prev.map(n => {
-        if (n.id === notiId) {
-          return { ...n, status: 'sent' };
-        }
-        return n;
-      }));
-    }, 1500);
-  };
+  const triggerNotification = useCallback((type: SystemNotification['type'], recipient: string, content: string) => {
+    if (!sessionRef.current) {
+      showToast('Sign in to dispatch notifications.', 'info');
+      return;
+    }
+    api<SystemNotification>('POST', '/notifications', { type, recipient, content })
+      .then(created => setNotifications(prev => [created, ...prev]))
+      .catch(err => showToast(errorMessage(err), 'error'));
+  }, [showToast]);
 
   const handleConfigChange = (key: string, newValue: string) => {
-    setConfigs(prev => prev.map(cfg => {
-      if (cfg.key === key) {
-        triggerLog(
-          'GLOBAL_CONFIGURATION_UPDATED',
-          'system_configs',
-          key,
-          'SUCCESS',
-          `Modified global variable "${key}" value from "${cfg.value}" to "${newValue}".`
-        );
-        return { ...cfg, value: newValue };
-      }
-      return cfg;
-    }));
+    api<SystemConfig>('PUT', `/configs/${encodeURIComponent(key)}`, { value: newValue })
+      .then(updated => {
+        setConfigs(prev => prev.map(cfg => (cfg.key === key ? updated : cfg)));
+        if (canViewAuditLogs) refreshAuditLogs();
+      })
+      .catch(err => showToast(errorMessage(err), 'error'));
   };
 
-  // Seed default configurations on launch
+  // The server also writes audit records of its own (logins, config and master changes);
+  // pick those up whenever an authorised user opens the audit console.
   useEffect(() => {
-    triggerLog('SYSTEM_CONFIGS_SEEDED', 'system_configs', 'all', 'SUCCESS', 'Seeded core Platform Foundation environment variables.');
-  }, []);
+    if (viewMode === 'foundation' && activeTab === 'logs' && canViewAuditLogs) refreshAuditLogs();
+  }, [viewMode, activeTab, canViewAuditLogs, refreshAuditLogs]);
 
   const maintenanceModeActive = configs.find(c => c.key === 'MAINTENANCE_MODE')?.value === 'true';
   const maxUploadSizeMb = parseInt(configs.find(c => c.key === 'MAX_UPLOAD_SIZE_MB')?.value || '10', 10);
+
+  if (booting) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-8">
+        <div className="relative w-12 h-12">
+          <div className="absolute inset-0 rounded-full border-2 border-emerald-500/10" />
+          <div className="absolute inset-0 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+        </div>
+        <p className="text-slate-400 font-mono text-[10px] uppercase tracking-wider mt-4 animate-pulse">
+          Connecting to RealtyConnect...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
       
       {viewMode === 'business' ? (
         <div className="w-full min-h-screen flex flex-col">
+          {/* Keyed on the session so every module remounts and reloads its data when it changes. */}
+          <React.Fragment key={userSession ? `${userSession.id}:${userSession.role}` : 'anonymous'}>
           <LandingPortal 
+            authMeta={authMeta}
+            initialViewMode={landingView}
             onLogTriggered={triggerLog}
             userSession={userSession}
             showToast={showToast}
@@ -234,11 +316,14 @@ export default function App() {
             onStartOnboarding={() => setViewMode('onboarding')}
             isLightMode={isLightMode}
             onToggleTheme={() => setIsLightMode(prev => !prev)}
-            onLogout={() => setUserSession(null)}
-            onLogin={(email, role, permissions, subscriptionPlan, organizationName, reraRegistration) => 
-              setUserSession({ email, role, permissions, subscriptionPlan, organizationName, reraRegistration })
-            }
+            onLogout={handleLogout}
+            onLogin={handleLogin}
+            onRegister={handleRegister}
+            onSessionStale={() => {
+              reloadSession().catch(err => showToast(errorMessage(err), 'error'));
+            }}
           />
+          </React.Fragment>
         </div>
       ) : viewMode === 'onboarding' ? (
         <div className="w-full min-h-screen flex flex-col">
@@ -293,13 +378,13 @@ export default function App() {
               {maintenanceModeActive && (
                 <span className="flex items-center gap-1 bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-bold animate-pulse text-[10px]">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  MAINTENANCE MODE ACTIVE
+                  Maintenance Mode Active
                 </span>
               )}
 
               <span className="flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-bold text-[10px]">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                PRODUCTION BASELINE READY
+                Production Baseline Ready
               </span>
 
               <button
@@ -352,7 +437,7 @@ export default function App() {
               </div>
 
               <span className="text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
-                STATUS: READY
+                Status: Ready
               </span>
             </div>
 
@@ -409,8 +494,15 @@ export default function App() {
 
                 {activeTab === 'auth' && (
                   <AuthSimulator 
-                    onLogTriggered={triggerLog} 
-                    onSessionChanged={setUserSession} 
+                    userSession={userSession}
+                    authMeta={authMeta}
+                    onLogin={handleLogin}
+                    onLogout={handleLogout}
+                    onSwitchRole={handleSwitchRole}
+                    onPermissionsChanged={() => {
+                      reloadSession().catch(err => showToast(errorMessage(err), 'error'));
+                      if (canViewAuditLogs) refreshAuditLogs();
+                    }}
                     maintenanceMode={maintenanceModeActive}
                     showToast={showToast}
                   />
@@ -437,6 +529,7 @@ export default function App() {
                   <FileUploader 
                     onLogTriggered={triggerLog} 
                     onNotificationTriggered={(type, content) => triggerNotification(type, userSession?.email || 'SYSTEM_OPERATOR', content)}
+                    userSession={userSession}
                     maxSizeMb={maxUploadSizeMb}
                     showToast={showToast}
                   />

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { appStore } from '../lib/appStore';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   Building2, CheckCircle2, MapPin, Calendar, DollarSign, Briefcase, Award, Users, Star, 
   MessageSquare, Share2, Send, Clock, Phone, Mail, FileText, Plus, Trash2, Edit3, Save, X, 
@@ -10,6 +11,10 @@ import {
 import { 
   BusinessProfile, TeamMember, ProjectItem, ReviewItem, GalleryItem, getSeededProfile 
 } from './ProfileMockData';
+import { emptyCompanyProfile, fetchCompanyProfile, isRegisteredCompanyId, postCompanyReview, saveMyCompanyProfile, type CompanyProfile } from '../lib/companies';
+import { errorMessage } from '../lib/api';
+import { currentUserEmail, currentUserName } from '../lib/identity';
+import CompanyProfileForm from './CompanyProfileForm';
 
 interface BusinessProfileEngineProps {
   businessId: string;
@@ -26,6 +31,10 @@ interface BusinessProfileEngineProps {
   ) => void;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
   userRole?: string;
+  // Organization of the signed-in user; a company's own profile is editable only by it.
+  currentOrgId?: string | null;
+  // Called after the owner's changes were saved on the server.
+  onProfileSaved?: () => void;
   connections?: any[];
   following?: string[];
   onToggleFollow?: (id: string, name: string) => void;
@@ -168,6 +177,8 @@ export default function BusinessProfileEngine({
   onLogTriggered,
   showToast,
   userRole,
+  currentOrgId,
+  onProfileSaved,
   connections,
   following,
   onToggleFollow,
@@ -178,10 +189,39 @@ export default function BusinessProfileEngine({
   onSendPartnership
 }: BusinessProfileEngineProps) {
   
-  // Load initial profile from mock data file
+  // Companies registered on the platform load their real profile from the server.
+  // The bundled sample companies (demo mode) get a generated one.
+  const isRegistered = isRegisteredCompanyId(businessId);
+  const isOwner = isRegistered && !!currentOrgId && businessId === currentOrgId;
+
   const [profile, setProfile] = useState<BusinessProfile>(() => 
-    getSeededProfile(businessId, businessName, businessCategory, businessLocation)
+    isRegistered
+      ? emptyCompanyProfile(businessId, businessName, businessCategory)
+      : getSeededProfile(businessId, businessName, businessCategory, businessLocation)
   );
+  const [isLoadingProfile, setIsLoadingProfile] = useState(isRegistered);
+  // JSON of the profile as the server last confirmed it; anything different is an unsaved change.
+  const savedProfileRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isRegistered) return;
+    let cancelled = false;
+    fetchCompanyProfile(businessId)
+      .then(loaded => {
+        if (cancelled) return;
+        savedProfileRef.current = JSON.stringify(loaded);
+        setProfile(loaded);
+        setIsLoadingProfile(false);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        showToast(errorMessage(err), 'error');
+        onClose();
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [businessId]);
 
   // Switcher presets for sandboxed test roles
   const STAKEHOLDER_PRESETS = [
@@ -210,13 +250,29 @@ export default function BusinessProfileEngine({
     showToast(`Loaded ${preset.role} Profile Preset successfully!`, 'success');
   };
 
-  const [isOwnerView, setIsOwnerView] = useState<boolean>(false); // Starts as Visitor public portal
+  const [isOwnerView, setIsOwnerView] = useState<boolean>(isOwner); // Visitors always get the public view
   const [isEditing, setIsEditing] = useState<boolean>(false);
+
+  // Save the owner's changes shortly after they are made. Inline text edits wait for "Save Settings".
+  useEffect(() => {
+    if (!isOwner || isLoadingProfile || isEditing) return;
+    const snapshot = JSON.stringify(profile);
+    if (snapshot === savedProfileRef.current) return;
+    const timer = setTimeout(() => {
+      saveMyCompanyProfile(profile as CompanyProfile)
+        .then(() => {
+          savedProfileRef.current = snapshot;
+          onProfileSaved?.();
+        })
+        .catch(err => showToast(`Profile not saved: ${errorMessage(err)}`, 'error'));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [profile, isOwner, isLoadingProfile, isEditing]);
   const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'portfolio' | 'team' | 'reviews' | 'related' | 'leads' | 'settings'>('overview');
 
   const [profileLeads, setProfileLeads] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_leads');
+      const saved = appStore.getItem('realtyconnect_leads');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return [];
@@ -225,7 +281,7 @@ export default function BusinessProfileEngine({
   useEffect(() => {
     const handleSync = () => {
       try {
-        const saved = localStorage.getItem('realtyconnect_leads');
+        const saved = appStore.getItem('realtyconnect_leads');
         if (saved) setProfileLeads(JSON.parse(saved));
       } catch (e) {}
     };
@@ -278,7 +334,7 @@ export default function BusinessProfileEngine({
     const loadCrmData = () => {
       try {
         // Load CRM Accounts
-        const savedCrm = localStorage.getItem('realtyconnect_crm_accounts');
+        const savedCrm = appStore.getItem('realtyconnect_crm_accounts');
         let accountsList = [];
         if (savedCrm) {
           accountsList = JSON.parse(savedCrm);
@@ -298,7 +354,7 @@ export default function BusinessProfileEngine({
               verificationStatus: 'Verified',
               membershipStatus: 'Elite Plus',
               relationshipStatus: 'Hot',
-              assignedManager: 'Vikram Malhotra',
+              assignedManager: currentUserName(),
               customerSince: '2025-01-10',
               businessValue: 480,
               currentStage: 'Strategic Partner',
@@ -310,7 +366,7 @@ export default function BusinessProfileEngine({
               ]
             }
           ];
-          localStorage.setItem('realtyconnect_crm_accounts', JSON.stringify(initialCrm));
+          appStore.setItem('realtyconnect_crm_accounts', JSON.stringify(initialCrm));
           setCrmAccounts(initialCrm);
           accountsList = initialCrm;
         }
@@ -323,7 +379,7 @@ export default function BusinessProfileEngine({
         setAssociatedCrmAccount(matched || null);
 
         // Load meetings
-        const meetsStr = localStorage.getItem('realtyconnect_meetings');
+        const meetsStr = appStore.getItem('realtyconnect_meetings');
         if (meetsStr) {
           const allMeets = JSON.parse(meetsStr);
           const filteredMeets = allMeets.filter((m: any) => 
@@ -334,7 +390,7 @@ export default function BusinessProfileEngine({
         }
 
         // Load conversations
-        const convStr = localStorage.getItem('realtyconnect_conversations');
+        const convStr = appStore.getItem('realtyconnect_conversations');
         if (convStr) {
           const allConvs = JSON.parse(convStr);
           const filteredConvs = allConvs.filter((c: any) => 
@@ -345,7 +401,7 @@ export default function BusinessProfileEngine({
         }
 
         // Load RFQs
-        const rfqStr = localStorage.getItem('realtyconnect_rfq_list');
+        const rfqStr = appStore.getItem('realtyconnect_rfq_list');
         if (rfqStr) {
           const allRfqs = JSON.parse(rfqStr);
           const filteredRfqs = allRfqs.filter((r: any) => 
@@ -378,7 +434,7 @@ export default function BusinessProfileEngine({
         verificationStatus: 'Verified',
         membershipStatus: 'Premium Gold',
         relationshipStatus: 'Warm',
-        assignedManager: 'Vikram Malhotra',
+        assignedManager: currentUserName(),
         customerSince: new Date().toISOString().split('T')[0],
         businessValue: 75, // ₹75 Lakhs value estimate
         currentStage: 'Prospect',
@@ -404,7 +460,7 @@ export default function BusinessProfileEngine({
       };
 
       const updated = [newCrmAcc, ...crmAccounts];
-      localStorage.setItem('realtyconnect_crm_accounts', JSON.stringify(updated));
+      appStore.setItem('realtyconnect_crm_accounts', JSON.stringify(updated));
       setCrmAccounts(updated);
       setAssociatedCrmAccount(newCrmAcc);
       showToast(`Onboarded ${businessName} into Active CRM Relationships!`, 'success');
@@ -415,7 +471,12 @@ export default function BusinessProfileEngine({
   };
 
   // Premium content values matching Priority 03 B2B criteria
-  const b2bContent = getPremiumB2BData(profile.category);
+  // Showcase content is generated per category for the sample companies only.
+  const b2bContent = isRegistered
+    ? { products: [], caseStudies: [], opportunities: [], similar: [], highlights: [], certifications: [] } as unknown as ReturnType<typeof getPremiumB2BData>
+    : getPremiumB2BData(profile.category);
+  const reviewCount = profile.reviews.length;
+  const averageRating = reviewCount ? Math.round((profile.reviews.reduce((sum, r) => sum + r.rating, 0) / reviewCount) * 10) / 10 : 0;
   const yearsInBusiness = 2026 - parseInt(profile.yearEstablished || '2008');
 
   // Calculate completeness progress
@@ -437,8 +498,8 @@ export default function BusinessProfileEngine({
     subject: `B2B Procurement Consultation - ${profile.name}`,
     category: 'Material Quotation',
     message: '',
-    senderEmail: 'procurement@multisarv.in',
-    senderPhone: '+91 91000 22011'
+    senderEmail: currentUserEmail(),
+    senderPhone: ''
   });
   const [isSubmittingEnquiry, setIsSubmittingEnquiry] = useState(false);
   const [simulatedReply, setSimulatedReply] = useState<string | null>(null);
@@ -458,9 +519,9 @@ export default function BusinessProfileEngine({
       name: newTeam.name,
       role: newTeam.role,
       department: newTeam.department || 'Management',
-      email: newTeam.email || 'contact@corporate.com',
-      phone: newTeam.phone || '+91 99999 88888',
-      photoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop'
+      email: newTeam.email || '',
+      phone: newTeam.phone || '',
+      photoUrl: ''
     };
     setProfile(prev => ({ ...prev, team: [...prev.team, member] }));
     setNewTeam({ name: '', role: '', department: 'Engineering & Delivery', email: '', phone: '' });
@@ -484,8 +545,8 @@ export default function BusinessProfileEngine({
       status: newProject.status as any || 'Completed',
       value: newProject.value,
       area: newProject.area || 'N/A',
-      location: newProject.location || profile.workingCities[0] || 'Mumbai, MH',
-      description: newProject.description || 'Verified real estate structural execution.',
+      location: newProject.location || profile.workingCities[0] || '',
+      description: newProject.description || '',
       completionYear: newProject.completionYear || '2026'
     };
     setProfile(prev => ({ ...prev, portfolio: [...prev.portfolio, proj] }));
@@ -502,6 +563,21 @@ export default function BusinessProfileEngine({
 
   const handleAddReview = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isRegistered) {
+      // The reviewer is whoever is signed in; the server records their name and company.
+      if (!currentOrgId) return showToast('Sign in to review a company.', 'info');
+      if (isOwner) return showToast('A company cannot review itself.', 'error');
+      if (newReview.comment.trim().length < 5) return showToast('Please write a few words about your experience.', 'error');
+      postCompanyReview(profile.id, newReview.rating, newReview.comment.trim())
+        .then(updated => {
+          setProfile(updated);
+          setNewReview({ author: '', company: '', rating: 5, comment: '' });
+          onProfileSaved?.();
+          showToast('Your review has been posted.', 'success');
+        })
+        .catch(err => showToast(errorMessage(err), 'error'));
+      return;
+    }
     if (!newReview.author || !newReview.comment) return showToast('Please enter your name and recommendation text.', 'error');
     const item: ReviewItem = {
       id: `r-${Date.now()}`,
@@ -558,6 +634,12 @@ export default function BusinessProfileEngine({
     showToast('Alliance and dealership application registered successfully!', 'success');
   };
 
+  if (isLoadingProfile) {
+    return (
+      <div className="p-12 text-center text-slate-400 font-mono text-xs" id="company-profile-loading">Loading company profile...</div>
+    );
+  }
+
   return (
     <div className="bg-slate-950 border border-slate-800/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col min-h-[85vh] animate-fade-in text-slate-200">
       
@@ -570,14 +652,15 @@ export default function BusinessProfileEngine({
           <div>
             <div className="flex items-center gap-2">
               <span className="font-bold text-xs uppercase tracking-wider text-white font-mono">B2B Corporate Identity Portal</span>
-              <span className="bg-emerald-500/10 text-emerald-400 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border border-emerald-500/20">ENTERPRISE AUDIT ACTIVE</span>
+              <span className="bg-emerald-500/10 text-emerald-400 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border border-emerald-500/20">Enterprise Audit Active</span>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Preset Demo Switcher */}
+          {/* Preset Demo Switcher (sample companies only) */}
           <select 
+            hidden={isRegistered}
             onChange={(e) => {
               const p = STAKEHOLDER_PRESETS.find(pr => pr.role === e.target.value);
               if (p) handleLoadPreset(p);
@@ -591,8 +674,8 @@ export default function BusinessProfileEngine({
             ))}
           </select>
 
-          {/* Toggle Owner vs Visitor View */}
-          <div className="bg-slate-950 p-0.5 rounded-lg border border-slate-800 flex items-center">
+          {/* Toggle Owner vs Visitor View (only the company's own members can manage it) */}
+          <div hidden={!isOwner} id="profile-view-toggle" className="bg-slate-950 p-0.5 rounded-lg border border-slate-800 flex items-center">
             <button
               onClick={() => { setIsOwnerView(false); setIsEditing(false); }}
               className={`px-3 py-1 text-[10px] font-mono font-bold rounded-md transition-all flex items-center gap-1 ${!isOwnerView ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
@@ -649,7 +732,7 @@ export default function BusinessProfileEngine({
                 {profile.verified && (
                   <span className="flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono text-[9px] font-bold">
                     <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    VERIFIED CORPORATE B2B
+                    Verified Corporate B2B
                   </span>
                 )}
                 <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-mono text-[9px] font-bold">
@@ -672,13 +755,13 @@ export default function BusinessProfileEngine({
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1.5 text-[10px] font-mono text-slate-400">
                 <span className="text-emerald-400 font-semibold">{profile.category}</span>
                 <span>•</span>
-                <span>Established {profile.yearEstablished} ({yearsInBusiness} Years)</span>
+                <span>{profile.yearEstablished ? `Established ${profile.yearEstablished} (${yearsInBusiness} Years)` : 'Establishment year not provided'}</span>
                 <span>•</span>
                 <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{profile.workingCities[0]}</span>
                 <span>•</span>
                 <span className="flex items-center gap-1 text-amber-400 font-semibold">
                   <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                  4.9 (142 endorsements)
+                  {isRegistered ? (reviewCount ? `${averageRating} (${reviewCount} review${reviewCount === 1 ? '' : 's'})` : 'No reviews yet') : '4.9 (142 endorsements)'}
                 </span>
               </div>
             </div>
@@ -712,17 +795,17 @@ export default function BusinessProfileEngine({
             <div className="flex items-center gap-4 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 text-right">
               <div>
                 <span className="text-[8px] font-mono text-slate-500 block">Connections</span>
-                <span className="text-emerald-400 font-mono text-xs font-bold">{profile.portfolio.length * 3 + 120}</span>
+                <span className="text-emerald-400 font-mono text-xs font-bold">{isRegistered ? '—' : profile.portfolio.length * 3 + 120}</span>
               </div>
               <div className="border-l border-slate-800 h-6" />
               <div>
                 <span className="text-[8px] font-mono text-slate-500 block">Followers</span>
-                <span className="text-emerald-400 font-mono text-xs font-bold">840</span>
+                <span className="text-emerald-400 font-mono text-xs font-bold">{isRegistered ? '—' : 840}</span>
               </div>
               <div className="border-l border-slate-800 h-6" />
               <div>
                 <span className="text-[8px] font-mono text-slate-500 block">RFQs Issued</span>
-                <span className="text-emerald-400 font-mono text-xs font-bold">{b2bContent.opportunities.length + 1}</span>
+                <span className="text-emerald-400 font-mono text-xs font-bold">{isRegistered ? '—' : b2bContent.opportunities.length + 1}</span>
               </div>
             </div>
           </div>
@@ -784,7 +867,9 @@ export default function BusinessProfileEngine({
                         className="w-full bg-slate-900 border border-slate-800 rounded p-2.5 text-slate-200 text-xs focus:border-emerald-500 outline-none"
                       />
                     ) : (
-                      <p className="p-4 bg-slate-900/35 border border-slate-900 rounded-xl leading-relaxed font-sans">{profile.introduction}</p>
+                      <p className="p-4 bg-slate-900/35 border border-slate-900 rounded-xl leading-relaxed font-sans">
+                        {profile.introduction || profile.description || (isRegistered ? <span className="text-slate-500">This company has not added a description yet.</span> : null)}
+                      </p>
                     )}
                   </div>
 
@@ -795,11 +880,11 @@ export default function BusinessProfileEngine({
                     </h3>
                     <div className="grid grid-cols-1 gap-3">
                       <div className="p-3 bg-slate-900/35 border border-slate-900 rounded-lg">
-                        <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block mb-0.5 font-bold">OUR CORPORATE VISION</span>
+                        <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block mb-0.5 font-bold">Our Corporate Vision</span>
                         <p className="italic text-slate-300 font-sans">"{profile.vision}"</p>
                       </div>
                       <div className="p-3 bg-slate-900/35 border border-slate-900 rounded-lg">
-                        <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block mb-0.5 font-bold">OUR MISSION OBJECTIVE</span>
+                        <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block mb-0.5 font-bold">Our Mission Objective</span>
                         <p className="italic text-slate-300 font-sans">"{profile.mission}"</p>
                       </div>
                     </div>
@@ -865,20 +950,20 @@ export default function BusinessProfileEngine({
                 {/* Trust identifiers */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
                   <div className="p-3 bg-slate-900/20 border border-slate-900 rounded-lg">
-                    <span className="text-[8px] font-mono text-slate-500 block mb-0.5 font-bold">GST REGISTRATION</span>
-                    <strong className="text-slate-200 font-mono text-[11px] block">{profile.gstin || 'VERIFIED'}</strong>
+                    <span className="text-[8px] font-mono text-slate-500 block mb-0.5 font-bold">GST Registration</span>
+                    <strong className="text-slate-200 font-mono text-[11px] block">{profile.gstin || (isRegistered ? 'Not provided' : 'VERIFIED')}</strong>
                   </div>
                   <div className="p-3 bg-slate-900/20 border border-slate-900 rounded-lg">
-                    <span className="text-[8px] font-mono text-slate-500 block mb-0.5 font-bold">TAX PAN INDICES</span>
-                    <strong className="text-slate-200 font-mono text-[11px] block">{profile.pan || 'VERIFIED'}</strong>
+                    <span className="text-[8px] font-mono text-slate-500 block mb-0.5 font-bold">Tax PAN Indices</span>
+                    <strong className="text-slate-200 font-mono text-[11px] block">{profile.pan || (isRegistered ? 'Not provided' : 'VERIFIED')}</strong>
                   </div>
                   <div className="p-3 bg-slate-900/20 border border-slate-900 rounded-lg">
-                    <span className="text-[8px] font-mono text-slate-500 block mb-0.5 font-bold">RERA REGISTRY ID</span>
-                    <strong className="text-slate-200 font-mono text-[11px] block truncate">{profile.reraNumber || 'EXEMPT/CIVIL'}</strong>
+                    <span className="text-[8px] font-mono text-slate-500 block mb-0.5 font-bold">RERA Registry ID</span>
+                    <strong className="text-slate-200 font-mono text-[11px] block truncate">{profile.reraNumber || (isRegistered ? 'Not provided' : 'EXEMPT/CIVIL')}</strong>
                   </div>
                   <div className="p-3 bg-slate-900/20 border border-slate-900 rounded-lg">
-                    <span className="text-[8px] font-mono text-slate-500 block mb-0.5 font-bold">CORPORATE CIN</span>
-                    <strong className="text-slate-200 font-mono text-[10px] block truncate">{profile.registrationNumber || 'VERIFIED'}</strong>
+                    <span className="text-[8px] font-mono text-slate-500 block mb-0.5 font-bold">Corporate CIN</span>
+                    <strong className="text-slate-200 font-mono text-[10px] block truncate">{profile.registrationNumber || (isRegistered ? 'Not provided' : 'VERIFIED')}</strong>
                   </div>
                 </div>
 
@@ -928,31 +1013,31 @@ export default function BusinessProfileEngine({
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             <div>
-                              <span className="text-[9px] font-mono text-slate-500 block">CRM STATUS</span>
+                              <span className="text-[9px] font-mono text-slate-500 block">CRM Status</span>
                               <span className="text-slate-200 font-semibold">{associatedCrmAccount.currentStage || 'Prospect'}</span>
                             </div>
                             <div>
-                              <span className="text-[9px] font-mono text-slate-500 block">MEMBERSHIP</span>
+                              <span className="text-[9px] font-mono text-slate-500 block">Membership</span>
                               <span className="text-emerald-400 font-bold">{associatedCrmAccount.membershipStatus || 'Gold Partner'}</span>
                             </div>
                           </div>
 
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             <div>
-                              <span className="text-[9px] font-mono text-slate-500 block">RELATIONSHIP MANAGER</span>
+                              <span className="text-[9px] font-mono text-slate-500 block">Relationship Manager</span>
                               <span className="text-slate-200 font-semibold flex items-center gap-1">
                                 <Users className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                                {associatedCrmAccount.assignedManager || 'Vikram Malhotra'}
+                                {associatedCrmAccount.assignedManager || currentUserName()}
                               </span>
                             </div>
                             <div>
-                              <span className="text-[9px] font-mono text-slate-500 block">PORTFOLIO VALUE</span>
+                              <span className="text-[9px] font-mono text-slate-500 block">Portfolio Value</span>
                               <span className="text-white font-bold font-mono">₹{associatedCrmAccount.businessValue || 0} Lakhs</span>
                             </div>
                           </div>
 
                           <div>
-                            <span className="text-[9px] font-mono text-slate-500 block">TAX IDENTIFIER</span>
+                            <span className="text-[9px] font-mono text-slate-500 block">Tax Identifier</span>
                             <span className="text-slate-300 font-mono text-xs">{associatedCrmAccount.gstNumber || '27AAACA1234F1Z5'}</span>
                           </div>
 
@@ -1027,7 +1112,7 @@ export default function BusinessProfileEngine({
                                 <div className="space-y-1">
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                                    <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">RFQ / TENDER</span>
+                                    <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">RFQ / Tender</span>
                                   </div>
                                   <h5 className="text-white font-bold">{r.title}</h5>
                                   <p className="text-slate-400 text-[11px]">Material Requirement: {r.materialSpecification}</p>
@@ -1045,13 +1130,13 @@ export default function BusinessProfileEngine({
                                 <div className="space-y-1">
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                                    <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">COMMUNICATION LEDGER</span>
+                                    <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Communication Ledger</span>
                                   </div>
                                   <p className="text-slate-300 font-sans text-[11px] italic">"{c.lastMessage || 'Channel established.'}"</p>
                                 </div>
                                 <div className="text-right shrink-0">
                                   <span className="text-[10px] font-mono text-slate-500 block">{c.lastActiveDate || 'Just Now'}</span>
-                                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[8px] font-mono uppercase font-bold">ACTIVE</span>
+                                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[8px] font-mono uppercase font-bold">Active</span>
                                 </div>
                               </div>
                             ))}
@@ -1244,7 +1329,7 @@ export default function BusinessProfileEngine({
                   {b2bContent.caseStudies.map((cs, idx) => (
                     <div key={idx} className="p-4 bg-slate-900/30 border border-slate-900 rounded-xl space-y-2">
                       <div className="flex justify-between items-center">
-                        <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase tracking-widest">VERIFIED CASE STUDY</span>
+                        <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase tracking-widest">Verified Case Study</span>
                         <span className="text-[10px] font-mono text-slate-500">Client Partner: {cs.client}</span>
                       </div>
                       <h4 className="text-white font-sans font-bold text-xs">{cs.title}</h4>
@@ -1317,7 +1402,7 @@ export default function BusinessProfileEngine({
                         ) : (
                           <div className="aspect-video bg-slate-950 flex flex-col items-center justify-center text-emerald-400 gap-1.5">
                             <FileText className="w-6 h-6" />
-                            <span className="text-[8px] font-mono uppercase text-slate-500">E-BROCHURE / PDF</span>
+                            <span className="text-[8px] font-mono uppercase text-slate-500">E-Brochure / PDF</span>
                           </div>
                         )}
                         <div className="p-2 flex items-center justify-between text-[10px] font-sans">
@@ -1382,7 +1467,7 @@ export default function BusinessProfileEngine({
                   {profile.team.map((member) => (
                     <div key={member.id} className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex items-center gap-3 relative group">
                       <img 
-                        src={member.photoUrl || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=150"} 
+                        src={member.photoUrl || `data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' fill='#1e293b'/><text x='32' y='40' font-size='24' font-family='sans-serif' text-anchor='middle' fill='#94a3b8'>${member.name.replace(/[^A-Za-z ]/g, '').split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase()}</text></svg>`)}`} 
                         alt={member.name} 
                         className="w-12 h-12 rounded-xl object-cover border border-slate-800 shrink-0"
                         referrerPolicy="no-referrer"
@@ -1420,6 +1505,7 @@ export default function BusinessProfileEngine({
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                     <input 
                       type="text" 
+                      hidden={isRegistered}
                       placeholder="Your Full Name"
                       value={newReview.author}
                       onChange={(e) => setNewReview({ ...newReview, author: e.target.value })}
@@ -1427,6 +1513,7 @@ export default function BusinessProfileEngine({
                     />
                     <input 
                       type="text" 
+                      hidden={isRegistered}
                       placeholder="Your Company Name"
                       value={newReview.company}
                       onChange={(e) => setNewReview({ ...newReview, company: e.target.value })}
@@ -1440,6 +1527,8 @@ export default function BusinessProfileEngine({
                       <option value="5">★★★★★ Outstanding (5/5)</option>
                       <option value="4">★★★★☆ Highly Recommended (4/5)</option>
                       <option value="3">★★★☆☆ Satisfactory (3/5)</option>
+                      <option value="2">★★☆☆☆ Below Expectations (2/5)</option>
+                      <option value="1">★☆☆☆☆ Poor (1/5)</option>
                     </select>
                   </div>
                   <textarea 
@@ -1468,7 +1557,7 @@ export default function BusinessProfileEngine({
                         <div className="flex items-center gap-1.5">
                           <span className="text-amber-400 font-mono text-xs font-bold">{'★'.repeat(r.rating)}</span>
                           <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8px] font-mono px-1.5 py-0.5 rounded font-bold">
-                            VERIFIED B2B
+                            Verified B2B
                           </span>
                         </div>
                       </div>
@@ -1714,6 +1803,15 @@ export default function BusinessProfileEngine({
             {/* TAB: OWNER PORTAL */}
             {activeTab === 'settings' && isOwnerView && (
               <div className="space-y-6 animate-fade-in text-xs text-slate-300 text-left">
+                {isOwner && (
+                  <CompanyProfileForm
+                    profile={profile as CompanyProfile}
+                    onSave={changes => {
+                      setProfile(prev => ({ ...prev, ...changes }));
+                      showToast('Saving company details...', 'info');
+                    }}
+                  />
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   
                   {/* Category 1: Preferences */}
@@ -1816,7 +1914,7 @@ export default function BusinessProfileEngine({
 
           {/* Real-time feed of recent corporate actions at bottom of left panel */}
           <div className="border-t border-slate-900 p-6 bg-slate-900/10 text-left text-xs text-slate-400 font-mono space-y-2">
-            <span className="text-[9px] font-mono font-bold tracking-wider text-slate-500">RECENT LIVE CORPORATE ACTIONS</span>
+            <span className="text-[9px] font-mono font-bold tracking-wider text-slate-500">Recent Live Corporate Actions</span>
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               <span>[Update] Verified ISO audit report logged on the blockchain registry dynamically.</span>
@@ -1867,17 +1965,17 @@ export default function BusinessProfileEngine({
             {/* Quick trust scores */}
             <div className="bg-slate-950 p-3 rounded-xl border border-slate-900 grid grid-cols-2 gap-3 text-center">
               <div>
-                <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block mb-0.5">TRUST SCORE</span>
+                <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block mb-0.5">{isRegistered ? 'PEER RATING' : 'TRUST SCORE'}</span>
                 <span className="text-white font-mono text-xs font-bold flex items-center justify-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  9.9 / 10
+                  {isRegistered ? (reviewCount ? `${averageRating} / 5` : 'No reviews yet') : '9.9 / 10'}
                 </span>
               </div>
               <div>
-                <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block mb-0.5">RESPONSE RATIO</span>
+                <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block mb-0.5">Response Ratio</span>
                 <span className="text-white font-mono text-xs font-bold flex items-center justify-center gap-1">
                   <Clock className="w-3.5 h-3.5 text-emerald-400" />
-                  99% / 2hr
+                  {isRegistered ? 'Not tracked yet' : '99% / 2hr'}
                 </span>
               </div>
             </div>

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Database, 
   Plus, 
@@ -17,7 +17,8 @@ import {
   Calendar,
   Grid
 } from 'lucide-react';
-import { MasterDataCategory, MasterDataItem } from '../types';
+import { MasterDataCategory } from '../types';
+import { api, errorMessage } from '../lib/api';
 
 interface MastersManagerProps {
   onLogTriggered: (action: string, entity: string, entityId: string, status: 'SUCCESS' | 'FAILURE' | 'WARNING', details: string) => void;
@@ -62,6 +63,7 @@ const INITIAL_CATEGORIES: MasterDataCategory[] = [
 ];
 
 export default function MastersManager({ onLogTriggered, userSession, showToast }: MastersManagerProps) {
+  // The built-in list is only a placeholder until the server's registry arrives.
   const [categories, setCategories] = useState<MasterDataCategory[]>(INITIAL_CATEGORIES);
   const [activeCategoryKey, setActiveCategoryKey] = useState<string>('GEOGRAPHY_CITY');
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,14 +72,25 @@ export default function MastersManager({ onLogTriggered, userSession, showToast 
   const [newCode, setNewCode] = useState('');
   const [newName, setNewName] = useState('');
 
-  const activeCategory = categories.find(c => c.key === activeCategoryKey)!;
+  const loadMasters = useCallback(() => {
+    return api<MasterDataCategory[]>('GET', '/masters')
+      .then(setCategories)
+      .catch(err => showToast(errorMessage(err), 'error'));
+  }, [showToast]);
+
+  useEffect(() => {
+    void loadMasters();
+  }, [loadMasters]);
+
+  const activeCategory = categories.find(c => c.key === activeCategoryKey) ?? categories[0];
 
   const handleAddMaster = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!newCode.trim() || !newName.trim()) return;
 
-    // RBAC check: Must have MANAGE_COMMON_MASTERS permission (only Admin has by default)
+    // RBAC check: Must have MANAGE_COMMON_MASTERS permission (only Admin has by default).
+    // This only saves a round trip - the server enforces the same rule.
     const canManage = userSession?.permissions.includes('MANAGE_COMMON_MASTERS');
 
     if (!canManage) {
@@ -92,41 +105,13 @@ export default function MastersManager({ onLogTriggered, userSession, showToast 
       return;
     }
 
-    const codeUpper = newCode.trim().toUpperCase().replace(/\s+/g, '_');
-    
-    // Check if code already exists in active category
-    if (activeCategory.items.some(item => item.code === codeUpper)) {
-      showToast('Validation Error: A master entry with this identifier code already exists in this registry.', 'error');
-      return;
-    }
-
-    const newItem: MasterDataItem = {
-      id: Math.random().toString(36).substr(2, 9),
-      code: codeUpper,
-      name: newName.trim(),
-      isSystem: false
-    };
-
-    setCategories(prev => prev.map(cat => {
-      if (cat.key === activeCategoryKey) {
-        return {
-          ...cat,
-          items: [...cat.items, newItem]
-        };
-      }
-      return cat;
-    }));
-
-    onLogTriggered(
-      'MASTER_DATA_ENTRY_CREATED',
-      'common_masters',
-      newItem.id,
-      'SUCCESS',
-      `Audit Trigger: Created new lookup entry "${newItem.name}" [Code: ${newItem.code}] in registry category "${activeCategoryKey}".`
-    );
-
-    setNewCode('');
-    setNewName('');
+    api('POST', '/masters', { category: activeCategoryKey, code: newCode.trim(), name: newName.trim() })
+      .then(() => {
+        setNewCode('');
+        setNewName('');
+        return loadMasters();
+      })
+      .catch(err => showToast(errorMessage(err), 'error'));
   };
 
   const handleDeleteMaster = (id: string, code: string, name: string) => {
@@ -145,37 +130,10 @@ export default function MastersManager({ onLogTriggered, userSession, showToast 
       return;
     }
 
-    // System Master lockout check
-    const item = activeCategory.items.find(i => i.id === id);
-    if (item?.isSystem) {
-      onLogTriggered(
-        'MASTER_DATA_ALTERATION_REJECTED',
-        'common_masters',
-        id,
-        'WARNING',
-        `Aborted deletion of master entry: "${code}" is a hardcoded System Master value and is locked.`
-      );
-      showToast('System Restriction: This master entry is designated as a Core System Master and cannot be deleted or altered.', 'error');
-      return;
-    }
-
-    setCategories(prev => prev.map(cat => {
-      if (cat.key === activeCategoryKey) {
-        return {
-          ...cat,
-          items: cat.items.filter(item => item.id !== id)
-        };
-      }
-      return cat;
-    }));
-
-    onLogTriggered(
-      'MASTER_DATA_ENTRY_DELETED',
-      'common_masters',
-      id,
-      'SUCCESS',
-      `Audit Trigger: Deleted master lookup entry "${name}" [Code: ${code}] from category "${activeCategoryKey}".`
-    );
+    // System masters are locked; the server refuses (and audits) the attempt.
+    api('DELETE', `/masters/${encodeURIComponent(id)}`)
+      .then(() => loadMasters())
+      .catch(err => showToast(errorMessage(err), 'error'));
   };
 
   const filteredItems = activeCategory.items.filter(item => 
@@ -268,7 +226,7 @@ export default function MastersManager({ onLogTriggered, userSession, showToast 
                   <div className="flex items-center gap-3">
                     {item.isSystem ? (
                       <span className="text-[9px] font-mono bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded flex items-center gap-1 font-bold">
-                        SYSTEM LOCK
+                        System Lock
                       </span>
                     ) : (
                       <button

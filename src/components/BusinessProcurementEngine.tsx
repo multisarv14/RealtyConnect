@@ -1,3 +1,5 @@
+import { currentUserName } from '../lib/identity';
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Building2, Users, CheckCircle2, ArrowRight, MapPin, Mail, Phone, 
@@ -280,7 +282,7 @@ export default function BusinessProcurementEngine({
   // Storage persistence
   const [requests, setRequests] = useState<ProcurementRequest[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_procurement_requests');
+      const saved = appStore.getItem('realtyconnect_procurement_requests');
       return saved ? JSON.parse(saved) : INITIAL_REQUESTS;
     } catch (e) {
       return INITIAL_REQUESTS;
@@ -289,7 +291,7 @@ export default function BusinessProcurementEngine({
 
   const [suppliers, setSuppliers] = useState<ProcurementSupplier[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_procurement_suppliers');
+      const saved = appStore.getItem('realtyconnect_procurement_suppliers');
       return saved ? JSON.parse(saved) : INITIAL_SUPPLIERS;
     } catch (e) {
       return INITIAL_SUPPLIERS;
@@ -298,7 +300,7 @@ export default function BusinessProcurementEngine({
 
   useEffect(() => {
     try {
-      localStorage.setItem('realtyconnect_procurement_requests', JSON.stringify(requests));
+      appStore.setItem('realtyconnect_procurement_requests', JSON.stringify(requests));
     } catch (e) {
       console.error('Error saving requests', e);
     }
@@ -306,7 +308,7 @@ export default function BusinessProcurementEngine({
 
   useEffect(() => {
     try {
-      localStorage.setItem('realtyconnect_procurement_suppliers', JSON.stringify(suppliers));
+      appStore.setItem('realtyconnect_procurement_suppliers', JSON.stringify(suppliers));
     } catch (e) {
       console.error('Error saving suppliers', e);
     }
@@ -558,9 +560,9 @@ export default function BusinessProcurementEngine({
   };
 
   const handlePromoteToRfq = (req: ProcurementRequest) => {
-    // Integration logic: create a dummy RFQ in localStorage to simulate cross-engine promotion
+    // Integration logic: create a dummy RFQ in appStore to simulate cross-engine promotion
     try {
-      const activeRfqs = localStorage.getItem('realtyconnect_rfqs');
+      const activeRfqs = appStore.getItem('realtyconnect_rfqs');
       const currentList = activeRfqs ? JSON.parse(activeRfqs) : [];
       
       const newRfqId = `rfq-${Date.now().toString().slice(-4)}`;
@@ -578,7 +580,7 @@ export default function BusinessProcurementEngine({
         timestamp: new Date().toLocaleString()
       };
 
-      localStorage.setItem('realtyconnect_rfqs', JSON.stringify([newRfqObj, ...currentList]));
+      appStore.setItem('realtyconnect_rfqs', JSON.stringify([newRfqObj, ...currentList]));
       
       // Update our procurement status
       setRequests(prev => prev.map(r => {
@@ -710,7 +712,7 @@ export default function BusinessProcurementEngine({
           date: new Date().toLocaleString(),
           status: nextStatus,
           text: 'Materials received on site. Quality metrics approved. RERA compliance checklist updated.',
-          user: userSession ? userSession.email : 'Vikram Malhotra'
+          user: currentUserName()
         };
 
         // Update supplier delivery statistics
@@ -840,7 +842,7 @@ export default function BusinessProcurementEngine({
         <div>
           <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-[9px] uppercase tracking-widest font-bold mb-2">
             <Sparkle className="w-3 h-3 text-emerald-400 animate-pulse" />
-            Sprint 18 — Enterprise Procurement
+            Procurement
           </div>
           <h2 className="text-xl md:text-2xl font-extrabold text-white flex items-center gap-2">
             <HardHat className="w-5 h-5 text-emerald-500" />
@@ -1046,7 +1048,7 @@ export default function BusinessProcurementEngine({
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-mono font-bold text-slate-400">{req.id}</span>
-                        <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase">IN TRANSIT</span>
+                        <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase">In Transit</span>
                       </div>
                       <h4 className="text-xs font-bold text-white leading-snug truncate">{req.title}</h4>
                       
@@ -1108,7 +1110,7 @@ export default function BusinessProcurementEngine({
                       <div className="flex items-center gap-2">
                         <h4 className="text-xs font-bold text-white">{sup.name}</h4>
                         {sup.verified && (
-                          <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 rounded font-mono font-bold">VERIFIED</span>
+                          <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 rounded font-mono font-bold">Verified</span>
                         )}
                       </div>
                       <p className="text-[10px] text-slate-400">{sup.category} • {sup.location}</p>
@@ -1396,11 +1398,11 @@ export default function BusinessProcurementEngine({
 
                       <div className="pt-3 border-t border-slate-900/60 flex items-center justify-between">
                         <div>
-                          <span className="text-[8px] text-slate-500 block">BUDGET ESTIMATE</span>
+                          <span className="text-[8px] text-slate-500 block">Budget Estimate</span>
                           <span className="text-xs font-bold text-emerald-400 font-mono">{formatCurrency(req.estimatedCost)}</span>
                         </div>
                         <div>
-                          <span className="text-[8px] text-slate-500 block text-right">REQUIRED DATE</span>
+                          <span className="text-[8px] text-slate-500 block text-right">Required Date</span>
                           <span className="text-[10px] font-mono text-slate-300 font-bold block text-right">{req.requiredDate}</span>
                         </div>
                       </div>
@@ -1537,7 +1539,7 @@ export default function BusinessProcurementEngine({
                         <h4 className="text-sm font-bold text-white flex items-center gap-1.5 leading-snug">
                           {sup.name}
                           {sup.verified && (
-                            <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">VERIFIED</span>
+                            <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">Verified</span>
                           )}
                         </h4>
                       </div>
@@ -1606,7 +1608,7 @@ export default function BusinessProcurementEngine({
             {/* Sheet Header */}
             <div className="space-y-3 border-b border-slate-900 pb-5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-slate-500">REQUISITION SPECIFICATION SHEET</span>
+                <span className="text-xs font-mono font-bold text-slate-500">Requisition Specification Sheet</span>
                 <button
                   onClick={() => setSelectedRequest(null)}
                   className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white transition-all cursor-pointer border border-slate-800"
@@ -1815,7 +1817,7 @@ export default function BusinessProcurementEngine({
             {/* Header */}
             <div className="space-y-3 border-b border-slate-900 pb-5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-slate-500">SUPPLIER PERFORMANCE PORTFOLIO</span>
+                <span className="text-xs font-mono font-bold text-slate-500">Supplier Performance Portfolio</span>
                 <button
                   onClick={() => setSelectedSupplier(null)}
                   className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white transition-all cursor-pointer border border-slate-800"
@@ -1828,10 +1830,10 @@ export default function BusinessProcurementEngine({
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] font-mono font-bold text-slate-400">{selectedSupplier.id} • {selectedSupplier.location}</span>
                   {selectedSupplier.verified && (
-                    <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono font-bold">VERIFIED</span>
+                    <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono font-bold">Verified</span>
                   )}
                   {selectedSupplier.preferred && (
-                    <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono font-bold">PREFERRED</span>
+                    <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono font-bold">Preferred</span>
                   )}
                 </div>
                 <h3 className="text-base font-extrabold text-white leading-snug">{selectedSupplier.name}</h3>

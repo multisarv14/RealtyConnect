@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect } from 'react';
 import { 
   Wrench, Plus, Search, Filter, Calendar, FileText, Briefcase, Users, 
@@ -99,27 +100,27 @@ export default function BusinessAssetMaintenanceEngine({
 
   // Load / Save Local Storage
   useEffect(() => {
-    const storedAssets = localStorage.getItem('rc_assets');
-    const storedServices = localStorage.getItem('rc_services');
-    const storedContracts = localStorage.getItem('rc_contracts');
-    const storedCustCats = localStorage.getItem('rc_custom_categories');
+    const storedAssets = appStore.getItem('rc_assets');
+    const storedServices = appStore.getItem('rc_services');
+    const storedContracts = appStore.getItem('rc_contracts');
+    const storedCustCats = appStore.getItem('rc_custom_categories');
 
     if (storedAssets) setAssets(JSON.parse(storedAssets));
     else {
       setAssets(INITIAL_ASSETS);
-      localStorage.setItem('rc_assets', JSON.stringify(INITIAL_ASSETS));
+      appStore.setItem('rc_assets', JSON.stringify(INITIAL_ASSETS));
     }
 
     if (storedServices) setServices(JSON.parse(storedServices));
     else {
       setServices(INITIAL_SERVICES);
-      localStorage.setItem('rc_services', JSON.stringify(INITIAL_SERVICES));
+      appStore.setItem('rc_services', JSON.stringify(INITIAL_SERVICES));
     }
 
     if (storedContracts) setContracts(JSON.parse(storedContracts));
     else {
       setContracts(INITIAL_AMC_CONTRACTS);
-      localStorage.setItem('rc_contracts', JSON.stringify(INITIAL_AMC_CONTRACTS));
+      appStore.setItem('rc_contracts', JSON.stringify(INITIAL_AMC_CONTRACTS));
     }
 
     if (storedCustCats) setCustomCategories(JSON.parse(storedCustCats));
@@ -129,16 +130,16 @@ export default function BusinessAssetMaintenanceEngine({
     setAssets(updatedAssets);
     setServices(updatedServices);
     setContracts(updatedContracts);
-    localStorage.setItem('rc_assets', JSON.stringify(updatedAssets));
-    localStorage.setItem('rc_services', JSON.stringify(updatedServices));
-    localStorage.setItem('rc_contracts', JSON.stringify(updatedContracts));
+    appStore.setItem('rc_assets', JSON.stringify(updatedAssets));
+    appStore.setItem('rc_services', JSON.stringify(updatedServices));
+    appStore.setItem('rc_contracts', JSON.stringify(updatedContracts));
   };
 
   const handleAddCustomCategory = (cat: string) => {
     if (!cat.trim() || customCategories.includes(cat)) return;
     const updated = [...customCategories, cat];
     setCustomCategories(updated);
-    localStorage.setItem('rc_custom_categories', JSON.stringify(updated));
+    appStore.setItem('rc_custom_categories', JSON.stringify(updated));
     showToast(`Category "${cat}" registered!`, 'success');
   };
 
@@ -534,7 +535,7 @@ export default function BusinessAssetMaintenanceEngine({
                 REALTYCONNECT™ Asset & Service Engine
               </h1>
               <p className="text-[11px] text-slate-400 font-mono uppercase tracking-wider">
-                Sprint 22 • Physical Assets, Breakdown Logs & Compliance AMC Contracts
+                Physical assets, breakdown logs and AMC contracts
               </p>
             </div>
           </div>
@@ -1817,7 +1818,7 @@ export default function BusinessAssetMaintenanceEngine({
 
             <div className="space-y-3.5 text-xs">
               <div>
-                <span className="text-slate-500 font-mono text-[10px] block">TARGET EQUIPMENT</span>
+                <span className="text-slate-500 font-mono text-[10px] block">Target Equipment</span>
                 <strong className="text-white text-sm">{selectedAsset.name}</strong>
                 <div className="text-[10px] text-slate-400 font-mono">Current Location: {selectedAsset.currentLocation}</div>
               </div>

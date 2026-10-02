@@ -3,6 +3,8 @@
  * An enterprise-grade, high-fidelity quotation and tender exchange platform.
  */
 
+import { currentOrgId, currentOrgName, currentUserName } from '../lib/identity';
+import { appStore } from '../lib/appStore';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   FileText, 
@@ -359,31 +361,31 @@ export default function BusinessRfqEngine({
 }: BusinessRfqEngineProps) {
   // Master RFQ list and Quotations list stored in React state
   const [rfqList, setRfqList] = useState<RfqTender[]>(() => {
-    const saved = localStorage.getItem('realtyconnect_rfq_list');
+    const saved = appStore.getItem('realtyconnect_rfq_list');
     return saved ? JSON.parse(saved) : INITIAL_RFQS;
   });
 
   const [quotationList, setQuotationList] = useState<QuotationResponse[]>(() => {
-    const saved = localStorage.getItem('realtyconnect_quotation_list');
+    const saved = appStore.getItem('realtyconnect_quotation_list');
     return saved ? JSON.parse(saved) : INITIAL_QUOTATIONS;
   });
 
   const [savedRfqs, setSavedRfqs] = useState<string[]>(() => {
-    const saved = localStorage.getItem('realtyconnect_saved_rfqs');
+    const saved = appStore.getItem('realtyconnect_saved_rfqs');
     return saved ? JSON.parse(saved) : ['rfq-seed-1', 'rfq-seed-5'];
   });
 
   // Sync to local storage
   useEffect(() => {
-    localStorage.setItem('realtyconnect_rfq_list', JSON.stringify(rfqList));
+    appStore.setItem('realtyconnect_rfq_list', JSON.stringify(rfqList));
   }, [rfqList]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_quotation_list', JSON.stringify(quotationList));
+    appStore.setItem('realtyconnect_quotation_list', JSON.stringify(quotationList));
   }, [quotationList]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_saved_rfqs', JSON.stringify(savedRfqs));
+    appStore.setItem('realtyconnect_saved_rfqs', JSON.stringify(savedRfqs));
   }, [savedRfqs]);
 
   // Main navigation tab modes: 'directory' | 'my_rfqs' | 'create_rfq' | 'convert_opportunity'
@@ -595,8 +597,8 @@ export default function BusinessRfqEngine({
     const newQuote: QuotationResponse = {
       id: `q-${Date.now()}`,
       rfqId: selectedRfq.id,
-      companyId: userSession?.id || 'ent-user',
-      companyName: userSession?.name || 'My Corporate Sandbox',
+      companyId: currentOrgId() || 'ent-user',
+      companyName: currentOrgName(),
       companyLogoBg: userSession?.logoBg || 'bg-emerald-600',
       companyProfile: quoteForm.companyProfile,
       quotationAmount: quoteForm.quotationAmount,
@@ -622,7 +624,7 @@ export default function BusinessRfqEngine({
     setSelectedRfq(prev => prev ? { ...prev, bidsCount: prev.bidsCount + 1 } : null);
 
     try {
-      const savedLeads = localStorage.getItem('realtyconnect_leads');
+      const savedLeads = appStore.getItem('realtyconnect_leads');
       let currentLeads = [];
       if (savedLeads) {
         currentLeads = JSON.parse(savedLeads);
@@ -653,7 +655,7 @@ export default function BusinessRfqEngine({
         ],
         followUps: []
       };
-      localStorage.setItem('realtyconnect_leads', JSON.stringify([newLead, ...currentLeads]));
+      appStore.setItem('realtyconnect_leads', JSON.stringify([newLead, ...currentLeads]));
     } catch (e) {
       console.error('Error auto capturing lead from RFQ quote submission', e);
     }
@@ -709,8 +711,8 @@ export default function BusinessRfqEngine({
       priority: newRfqForm.priority,
       visibility: newRfqForm.visibility,
       status: 'Open',
-      companyId: userSession?.id || 'ent-user',
-      companyName: userSession?.name || 'My Corporate Sandbox',
+      companyId: currentOrgId() || 'ent-user',
+      companyName: currentOrgName(),
       companyLogoBg: userSession?.logoBg || 'bg-emerald-600',
       companyLogoText: userSession?.name?.substring(0, 2).toUpperCase() || 'MY',
       verified: true,
@@ -825,7 +827,7 @@ export default function BusinessRfqEngine({
         <div>
           <div className="flex items-center gap-2">
             <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono px-2.5 py-0.5 rounded-full font-bold">
-              SPRINT 11
+              RFQ & Tenders
             </span>
             <span className="text-[10px] text-slate-500 font-mono">REALTYCONNECT™ ECOSYSTEM</span>
           </div>
@@ -838,7 +840,7 @@ export default function BusinessRfqEngine({
         </div>
 
         {/* Tab switchers */}
-        <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-900 gap-1 self-start md:self-center">
+        <div className="flex max-w-full overflow-x-auto bg-slate-950 p-1 rounded-xl border border-slate-900 gap-1 self-start md:self-center">
           <button
             type="button"
             onClick={() => {
@@ -1223,7 +1225,7 @@ export default function BusinessRfqEngine({
           <div className="lg:col-span-12 space-y-6">
             
             {/* My RFQs Sidebar Filters */}
-            <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-900 gap-1 self-start">
+            <div className="flex max-w-full overflow-x-auto bg-slate-950 p-1 rounded-xl border border-slate-900 gap-1 self-start">
               <button
                 type="button"
                 onClick={() => setMyRfqSubFilter('published')}
@@ -1231,7 +1233,7 @@ export default function BusinessRfqEngine({
                   myRfqSubFilter === 'published' ? 'bg-slate-800 text-emerald-400 border border-emerald-400/20' : 'text-slate-400'
                 }`}
               >
-                My Published RFQs ({rfqList.filter(r => r.companyId === (userSession?.id || 'ent-user')).length})
+                My Published RFQs ({rfqList.filter(r => r.companyId === (currentOrgId() || 'ent-user')).length})
               </button>
               <button
                 type="button"
@@ -1258,7 +1260,7 @@ export default function BusinessRfqEngine({
                   myRfqSubFilter === 'submissions' ? 'bg-slate-800 text-emerald-400 border border-emerald-400/20' : 'text-slate-400'
                 }`}
               >
-                Submitted Quotations ({quotationList.filter(q => q.companyId === (userSession?.id || 'ent-user')).length})
+                Submitted Quotations ({quotationList.filter(q => q.companyId === (currentOrgId() || 'ent-user')).length})
               </button>
             </div>
 
@@ -1266,7 +1268,7 @@ export default function BusinessRfqEngine({
             <div className="space-y-4">
               {myRfqSubFilter === 'published' && (
                 <div className="space-y-4">
-                  {rfqList.filter(r => r.companyId === (userSession?.id || 'ent-user')).length === 0 ? (
+                  {rfqList.filter(r => r.companyId === (currentOrgId() || 'ent-user')).length === 0 ? (
                     <div className="bg-slate-950/40 border border-dashed border-slate-900 rounded-3xl p-10 text-center">
                       <AlertCircle className="w-8 h-8 text-slate-600 mx-auto mb-2" />
                       <p className="text-xs font-bold text-slate-300">No RFQs published under your current session</p>
@@ -1278,7 +1280,7 @@ export default function BusinessRfqEngine({
                       </button>
                     </div>
                   ) : (
-                    rfqList.filter(r => r.companyId === (userSession?.id || 'ent-user')).map(rfq => (
+                    rfqList.filter(r => r.companyId === (currentOrgId() || 'ent-user')).map(rfq => (
                       <div key={rfq.id} className="bg-slate-950 border border-slate-900 rounded-2xl p-5 space-y-4">
                         <div className="flex justify-between items-start">
                           <div>
@@ -1413,14 +1415,14 @@ export default function BusinessRfqEngine({
 
               {myRfqSubFilter === 'submissions' && (
                 <div className="space-y-4">
-                  {quotationList.filter(q => q.companyId === (userSession?.id || 'ent-user')).length === 0 ? (
+                  {quotationList.filter(q => q.companyId === (currentOrgId() || 'ent-user')).length === 0 ? (
                     <div className="bg-slate-950/40 border border-dashed border-slate-900 rounded-3xl p-10 text-center">
                       <Send className="w-8 h-8 text-slate-600 mx-auto mb-2" />
                       <p className="text-xs font-bold text-slate-300">No quotation responses submitted by you yet</p>
                       <p className="text-[10px] text-slate-500 mt-1">Browse the RFQ Directory to bid on active material scopes.</p>
                     </div>
                   ) : (
-                    quotationList.filter(q => q.companyId === (userSession?.id || 'ent-user')).map(q => {
+                    quotationList.filter(q => q.companyId === (currentOrgId() || 'ent-user')).map(q => {
                       const parentRfq = rfqList.find(r => r.id === q.rfqId);
                       return (
                         <div key={q.id} className="bg-slate-950 border border-slate-900 rounded-2xl p-5 space-y-3">
@@ -1768,11 +1770,11 @@ export default function BusinessRfqEngine({
               
               <div className="grid grid-cols-2 gap-3 text-xs font-mono">
                 <div className="bg-slate-900/40 p-3 rounded-xl border border-slate-900">
-                  <span className="text-slate-500 block text-[9px]">ACTIVE TEN-RFQS</span>
+                  <span className="text-slate-500 block text-[9px]">Active Ten-RFQs</span>
                   <span className="text-slate-200 font-bold text-sm block mt-1">{rfqList.filter(r => r.status === 'Open').length} Solicitations</span>
                 </div>
                 <div className="bg-slate-900/40 p-3 rounded-xl border border-slate-900">
-                  <span className="text-slate-500 block text-[9px]">TOTAL MY QUOTES</span>
+                  <span className="text-slate-500 block text-[9px]">Total MY Quotes</span>
                   <span className="text-slate-200 font-bold text-sm block mt-1">{quotationList.length} Responses</span>
                 </div>
               </div>
@@ -2015,7 +2017,7 @@ export default function BusinessRfqEngine({
                         const newConversationId = `conv-rfq-supplier-${selectedRfq.id}`;
                         // Seed conversation
                         try {
-                          const conversationsJson = localStorage.getItem('realtyconnect_conversations');
+                          const conversationsJson = appStore.getItem('realtyconnect_conversations');
                           let conversationsList = conversationsJson ? JSON.parse(conversationsJson) : [];
                           const exists = conversationsList.some((c: any) => c.id === newConversationId);
                           if (!exists) {
@@ -2031,7 +2033,7 @@ export default function BusinessRfqEngine({
                               priority: 'High' as const,
                               pinned: false,
                               archived: false,
-                              assignedExecutive: 'Vikram Malhotra',
+                              assignedExecutive: currentUserName(),
                               relatedEntity: {
                                 type: 'RFQ' as const,
                                 id: selectedRfq.id,
@@ -2060,11 +2062,11 @@ export default function BusinessRfqEngine({
                               ] as any[]
                             };
                             conversationsList.unshift(newConv);
-                            localStorage.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
+                            appStore.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
                           }
                         } catch (e) {}
 
-                        localStorage.setItem('realtyconnect_active_conversation_id', newConversationId);
+                        appStore.setItem('realtyconnect_active_conversation_id', newConversationId);
                         if (setActiveViewMode) {
                           setActiveViewMode('messaging');
                           showToast(`Supplier Discussion thread loaded for ${selectedRfq.rfqNumber}`, 'success');
@@ -2084,7 +2086,7 @@ export default function BusinessRfqEngine({
                         const newConversationId = `conv-rfq-buyer-${selectedRfq.id}`;
                         // Seed conversation
                         try {
-                          const conversationsJson = localStorage.getItem('realtyconnect_conversations');
+                          const conversationsJson = appStore.getItem('realtyconnect_conversations');
                           let conversationsList = conversationsJson ? JSON.parse(conversationsJson) : [];
                           const exists = conversationsList.some((c: any) => c.id === newConversationId);
                           if (!exists) {
@@ -2100,7 +2102,7 @@ export default function BusinessRfqEngine({
                               priority: 'Normal' as const,
                               pinned: false,
                               archived: false,
-                              assignedExecutive: 'Vikram Malhotra',
+                              assignedExecutive: currentUserName(),
                               relatedEntity: {
                                 type: 'RFQ' as const,
                                 id: selectedRfq.id,
@@ -2129,11 +2131,11 @@ export default function BusinessRfqEngine({
                               ] as any[]
                             };
                             conversationsList.unshift(newConv);
-                            localStorage.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
+                            appStore.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
                           }
                         } catch (e) {}
 
-                        localStorage.setItem('realtyconnect_active_conversation_id', newConversationId);
+                        appStore.setItem('realtyconnect_active_conversation_id', newConversationId);
                         if (setActiveViewMode) {
                           setActiveViewMode('messaging');
                           showToast(`Buyer Discussion thread loaded for ${selectedRfq.rfqNumber}`, 'success');
@@ -2153,7 +2155,7 @@ export default function BusinessRfqEngine({
                         const newConversationId = `conv-rfq-clarify-${selectedRfq.id}`;
                         // Seed conversation
                         try {
-                          const conversationsJson = localStorage.getItem('realtyconnect_conversations');
+                          const conversationsJson = appStore.getItem('realtyconnect_conversations');
                           let conversationsList = conversationsJson ? JSON.parse(conversationsJson) : [];
                           const exists = conversationsList.some((c: any) => c.id === newConversationId);
                           if (!exists) {
@@ -2169,7 +2171,7 @@ export default function BusinessRfqEngine({
                               priority: 'Normal' as const,
                               pinned: false,
                               archived: false,
-                              assignedExecutive: 'Vikram Malhotra',
+                              assignedExecutive: currentUserName(),
                               relatedEntity: {
                                 type: 'RFQ' as const,
                                 id: selectedRfq.id,
@@ -2198,11 +2200,11 @@ export default function BusinessRfqEngine({
                               ] as any[]
                             };
                             conversationsList.unshift(newConv);
-                            localStorage.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
+                            appStore.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
                           }
                         } catch (e) {}
 
-                        localStorage.setItem('realtyconnect_active_conversation_id', newConversationId);
+                        appStore.setItem('realtyconnect_active_conversation_id', newConversationId);
                         if (setActiveViewMode) {
                           setActiveViewMode('messaging');
                           showToast(`Clarification discussion thread loaded for ${selectedRfq.rfqNumber}`, 'success');

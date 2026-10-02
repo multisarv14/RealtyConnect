@@ -46,21 +46,21 @@ export default function LogsViewer({ logs, onClearSimulatorLogs }: LogsViewerPro
         return (
           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <ShieldCheck className="w-2.5 h-2.5" />
-            SUCCESS
+            Success
           </span>
         );
       case 'FAILURE':
         return (
           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-red-500/10 text-red-400 border border-red-500/20">
             <ShieldAlert className="w-2.5 h-2.5" />
-            CRITICAL
+            Critical
           </span>
         );
       case 'WARNING':
         return (
           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
             <AlertTriangle className="w-2.5 h-2.5" />
-            WARNING
+            Warning
           </span>
         );
       default:
@@ -105,10 +105,10 @@ export default function LogsViewer({ logs, onClearSimulatorLogs }: LogsViewerPro
               onChange={(e) => setStatusFilter(e.target.value as any)}
               className="bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-300 px-2 py-1 rounded outline-none"
             >
-              <option value="ALL">ALL LEVELS</option>
-              <option value="SUCCESS">SUCCESS ONLY</option>
-              <option value="WARNING">WARNING ONLY</option>
-              <option value="FAILURE">CRITICAL ONLY</option>
+              <option value="ALL">All Levels</option>
+              <option value="SUCCESS">Success Only</option>
+              <option value="WARNING">Warning Only</option>
+              <option value="FAILURE">Critical Only</option>
             </select>
           </div>
         </div>
@@ -177,12 +177,12 @@ export default function LogsViewer({ logs, onClearSimulatorLogs }: LogsViewerPro
           {selectedLog ? (
             <div className="mt-4 space-y-3.5 font-mono text-xs" id="log-detail-card">
               <div>
-                <span className="text-[9px] text-slate-500 block uppercase">EVENT IDENTIFIER</span>
+                <span className="text-[9px] text-slate-500 block uppercase">Event Identifier</span>
                 <span className="text-slate-300 font-semibold">{selectedLog.id}</span>
               </div>
 
               <div>
-                <span className="text-[9px] text-slate-500 block uppercase">USER EMAIL / SECURITY ROLE</span>
+                <span className="text-[9px] text-slate-500 block uppercase">User Email / Security Role</span>
                 <span className="text-slate-300">{selectedLog.userId}</span>
                 <span className="ml-1.5 text-[9px] bg-slate-900 border border-slate-850 text-slate-400 px-1 py-0.2 rounded font-bold">
                   {selectedLog.userRole}
@@ -190,13 +190,13 @@ export default function LogsViewer({ logs, onClearSimulatorLogs }: LogsViewerPro
               </div>
 
               <div>
-                <span className="text-[9px] text-slate-500 block uppercase">AFFECTED REGISTRY / RECORD KEY</span>
+                <span className="text-[9px] text-slate-500 block uppercase">Affected Registry / Record Key</span>
                 <span className="text-slate-300">{selectedLog.entity}</span>
                 <span className="ml-1.5 text-slate-400">➔ {selectedLog.entityId}</span>
               </div>
 
               <div>
-                <span className="text-[9px] text-slate-500 block uppercase">CRYSTALLIZED ACTION DETAILS</span>
+                <span className="text-[9px] text-slate-500 block uppercase">Crystallized Action Details</span>
                 <p className="text-slate-250 font-sans mt-0.5 leading-relaxed bg-slate-950 p-2 rounded border border-slate-850">
                   {selectedLog.details}
                 </p>
@@ -204,9 +204,9 @@ export default function LogsViewer({ logs, onClearSimulatorLogs }: LogsViewerPro
 
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[9px] text-slate-500 block uppercase">BLOCK CHAINING SHA-256 HASH</span>
+                  <span className="text-[9px] text-slate-500 block uppercase">Block Chaining SHA-256 Hash</span>
                   <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.2 rounded font-bold border border-emerald-500/20">
-                    SECURED
+                    Secured
                   </span>
                 </div>
                 <p className="text-slate-400 text-[10px] break-all bg-slate-950 p-2 rounded border border-slate-850 mt-1">

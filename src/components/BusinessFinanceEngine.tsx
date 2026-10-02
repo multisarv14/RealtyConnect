@@ -1,3 +1,4 @@
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Building2, Users, CheckCircle2, ArrowRight, MapPin, Mail, Phone, 
@@ -253,57 +254,57 @@ export default function BusinessFinanceEngine({
   // States
   const [quotations, setQuotations] = useState<Quotation[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_finance_quotations');
+      const saved = appStore.getItem('realtyconnect_finance_quotations');
       return saved ? JSON.parse(saved) : INITIAL_QUOTATIONS;
     } catch { return INITIAL_QUOTATIONS; }
   });
 
   const [billings, setBillings] = useState<BillingRecord[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_finance_billings');
+      const saved = appStore.getItem('realtyconnect_finance_billings');
       return saved ? JSON.parse(saved) : INITIAL_BILLING;
     } catch { return INITIAL_BILLING; }
   });
 
   const [expenses, setExpenses] = useState<ExpenseRecord[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_finance_expenses');
+      const saved = appStore.getItem('realtyconnect_finance_expenses');
       return saved ? JSON.parse(saved) : INITIAL_EXPENSES;
     } catch { return INITIAL_EXPENSES; }
   });
 
   const [payments, setPayments] = useState<PaymentRecord[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_finance_payments');
+      const saved = appStore.getItem('realtyconnect_finance_payments');
       return saved ? JSON.parse(saved) : INITIAL_PAYMENTS;
     } catch { return INITIAL_PAYMENTS; }
   });
 
   const [notifications, setNotifications] = useState<FinanceNotification[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_finance_notifications');
+      const saved = appStore.getItem('realtyconnect_finance_notifications');
       return saved ? JSON.parse(saved) : INITIAL_NOTIFICATIONS;
     } catch { return INITIAL_NOTIFICATIONS; }
   });
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_finance_quotations', JSON.stringify(quotations));
+    appStore.setItem('realtyconnect_finance_quotations', JSON.stringify(quotations));
   }, [quotations]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_finance_billings', JSON.stringify(billings));
+    appStore.setItem('realtyconnect_finance_billings', JSON.stringify(billings));
   }, [billings]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_finance_expenses', JSON.stringify(expenses));
+    appStore.setItem('realtyconnect_finance_expenses', JSON.stringify(expenses));
   }, [expenses]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_finance_payments', JSON.stringify(payments));
+    appStore.setItem('realtyconnect_finance_payments', JSON.stringify(payments));
   }, [payments]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_finance_notifications', JSON.stringify(notifications));
+    appStore.setItem('realtyconnect_finance_notifications', JSON.stringify(notifications));
   }, [notifications]);
 
   // Tab View
@@ -667,7 +668,7 @@ export default function BusinessFinanceEngine({
         <div>
           <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-[9px] uppercase tracking-widest font-bold mb-2">
             <Sparkles className="w-3 h-3 text-emerald-400 animate-pulse" />
-            Sprint 20 — RealtyConnect Finance
+            Finance & Billing
           </div>
           <h2 className="text-xl md:text-2xl font-extrabold text-white flex items-center gap-2">
             <DollarSign className="w-5 h-5 text-emerald-500" />
@@ -894,7 +895,7 @@ export default function BusinessFinanceEngine({
                       <p className="text-[9px] text-slate-400">Audited cash reserves and balance matching active.</p>
                     </div>
                   </div>
-                  <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">STABLE</span>
+                  <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">Stable</span>
                 </div>
               </div>
             </div>
@@ -1520,7 +1521,7 @@ export default function BusinessFinanceEngine({
           <div className="p-4 bg-slate-900/20 border border-slate-900 rounded-xl space-y-2">
             <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Cross-Module Commercial Integrations</h3>
             <p className="text-xs text-slate-400">
-              Sprint 20 Finance & Billing ties directly to previous sprint milestones including Lead management, RFQs, CRM profiles, Procurement assets, and Inventories.
+              Finance & Billing connects to Lead Management, RFQs, CRM profiles, Procurement and Inventory.
             </p>
           </div>
 
@@ -2150,7 +2151,7 @@ export default function BusinessFinanceEngine({
         <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-850 rounded-xl max-w-2xl w-full p-6 text-left space-y-6">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <span className="text-xs font-bold text-white uppercase tracking-wider">SWISS SLATE PRINT LAYOUT (UI READY)</span>
+              <span className="text-xs font-bold text-white uppercase tracking-wider">Swiss Slate Print Layout (UI Ready)</span>
               <div className="flex gap-2">
                 <button
                   onClick={() => {
@@ -2178,7 +2179,7 @@ export default function BusinessFinanceEngine({
                   <p className="text-[10px] text-slate-500">BKC Area, Bandra East, Mumbai, India</p>
                 </div>
                 <div className="text-right font-mono">
-                  <h3 className="text-base font-bold text-emerald-400">TAX INVOICE</h3>
+                  <h3 className="text-base font-bold text-emerald-400">Tax Invoice</h3>
                   <p className="text-white font-bold">{selectedInvoice.invoiceNumber}</p>
                   <p className="text-slate-500">Date: {selectedInvoice.invoiceDate}</p>
                   <p className="text-slate-500">Due: {selectedInvoice.dueDate}</p>
@@ -2188,14 +2189,14 @@ export default function BusinessFinanceEngine({
               {/* Bill to block */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <h4 className="text-[9px] font-mono text-slate-500 uppercase font-bold mb-1">BILL TO:</h4>
+                  <h4 className="text-[9px] font-mono text-slate-500 uppercase font-bold mb-1">Bill to:</h4>
                   <p className="text-sm font-extrabold text-white">{selectedInvoice.customer}</p>
                   <p className="text-slate-400">Project: {selectedInvoice.project}</p>
                 </div>
                 <div className="text-right">
-                  <h4 className="text-[9px] font-mono text-slate-500 uppercase font-bold mb-1">REMITTANCE TO:</h4>
+                  <h4 className="text-[9px] font-mono text-slate-500 uppercase font-bold mb-1">Remittance to:</h4>
                   <p className="text-sm font-extrabold text-white">RealtyConnect Infrastructure Ltd</p>
-                  <p className="text-slate-400">HDFC BANK — IFSC HDFC0001094</p>
+                  <p className="text-slate-400">Hdfc Bank — IFSC HDFC0001094</p>
                 </div>
               </div>
 

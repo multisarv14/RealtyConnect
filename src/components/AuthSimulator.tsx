@@ -16,197 +16,93 @@ import {
   Clock
 } from 'lucide-react';
 import { STAKEHOLDER_ROLES } from '../data/blueprint';
+import { api, errorMessage, type AuthMeta, type Session } from '../lib/api';
 
 interface AuthGatewayProps {
-  onLogTriggered: (action: string, entity: string, entityId: string, status: 'SUCCESS' | 'FAILURE' | 'WARNING', details: string) => void;
-  onSessionChanged: (user: { email: string; role: string; permissions: string[] } | null) => void;
+  userSession: Session | null;
+  authMeta: AuthMeta | null;
+  onLogin: (email: string, password: string) => Promise<void>;
+  onLogout: () => Promise<void>;
+  onSwitchRole: (role: string) => Promise<void>;
+  // Called after the role matrix was changed on the server.
+  onPermissionsChanged: () => void;
   maintenanceMode: boolean;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-const SAMPLE_USERS = [
-  { email: 'admin@realtyconnect.com', password: 'Password@123', roles: ['ADMIN', 'COMPLIANCE_AUDITOR'] },
-  { email: 'builder@realtyconnect.com', password: 'Builder@123', roles: ['BUILDER'] },
-  { email: 'architect@realtyconnect.com', password: 'Architect@123', roles: ['ARCHITECT'] },
-  { email: 'contractor@realtyconnect.com', password: 'Contractor@123', roles: ['CONTRACTOR', 'MATERIAL_SUPPLIER'] }
-];
+interface RoleRecord {
+  code: string;
+  permissions: string[];
+}
 
-export default function AuthGateway({ onLogTriggered, onSessionChanged, maintenanceMode, showToast }: AuthGatewayProps) {
+export default function AuthGateway({ userSession, authMeta, onLogin, onLogout, onSwitchRole, onPermissionsChanged, maintenanceMode, showToast }: AuthGatewayProps) {
   // Authentication Form State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  
-  // Session Security States
-  const [loggedInUser, setLoggedInUser] = useState<{ email: string; roles: string[]; currentRole: string } | null>(null);
-  const [failedAttempts, setFailedAttempts] = useState<{ [email: string]: number }>({});
-  const [lockoutTimers, setLockoutTimers] = useState<{ [email: string]: number }>({}); // Countdown in seconds
-  const [sessionExpiry, setSessionExpiry] = useState<number | null>(null); // Countdown in seconds
+  const [submitting, setSubmitting] = useState(false);
+
+  // Role -> permissions. The built-in table is shown to visitors; signed-in users see the live matrix.
   const [customRolesPermissions, setCustomRolesPermissions] = useState<{ [role: string]: string[] }>(STAKEHOLDER_ROLES);
   const [activeMatrixRole, setActiveMatrixRole] = useState<string>('ADMIN');
 
-  // Lockout clock ticker
   useEffect(() => {
-    const interval = setInterval(() => {
-      // Countdown lockouts
-      setLockoutTimers(prev => {
-        const next = { ...prev };
-        let changed = false;
-        Object.keys(next).forEach(key => {
-          if (next[key] > 0) {
-            next[key] -= 1;
-            changed = true;
-          } else {
-            delete next[key];
-            changed = true;
-          }
-        });
-        return changed ? next : prev;
-      });
+    if (!userSession) {
+      setCustomRolesPermissions(STAKEHOLDER_ROLES);
+      return;
+    }
+    let cancelled = false;
+    api<RoleRecord[]>('GET', '/roles')
+      .then(roles => {
+        if (!cancelled) setCustomRolesPermissions(Object.fromEntries(roles.map(r => [r.code, r.permissions])));
+      })
+      .catch(err => showToast(errorMessage(err), 'error'));
+    return () => {
+      cancelled = true;
+    };
+  }, [userSession?.id]);
 
-      // Countdown session expiry
-      setSessionExpiry(prev => {
-        if (prev === null) return null;
-        if (prev > 1) return prev - 1;
-        
-        // Log out on expiry
-        handleLogout('Session automatically expired due to inactivity timeout of AUTH-04.');
-        return null;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [loggedInUser]);
-
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (maintenanceMode && email !== 'admin@realtyconnect.com') {
-      onLogTriggered('AUTH_LOGIN_FAILED', 'users', email, 'WARNING', 'User login aborted: System-wide Maintenance Mode active.');
-      showToast('System Maintenance Mode is currently enabled. Access is restricted to Administrator identities.', 'error');
-      return;
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      // Lockout (AUTH-02) and maintenance-mode rules are enforced, and audited, by the server.
+      await onLogin(email.trim(), password);
+      setPassword('');
+    } catch (err) {
+      showToast(`Authentication Failure: ${errorMessage(err)}`, 'error');
+    } finally {
+      setSubmitting(false);
     }
-
-    // Check Lockout
-    if (lockoutTimers[email] && lockoutTimers[email] > 0) {
-      onLogTriggered('AUTH_LOCKED_OUT_ATTEMPT', 'users', email, 'FAILURE', `Blocked login attempt: Account locked for another ${lockoutTimers[email]}s.`);
-      showToast(`Account is temporarily locked due to consecutive brute-force failures. Lock expires in ${lockoutTimers[email]} seconds.`, 'error');
-      return;
-    }
-
-    const user = SAMPLE_USERS.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
-
-    if (!user) {
-      onLogTriggered('AUTH_LOGIN_FAILED', 'users', email, 'FAILURE', 'Login attempt with non-existent system identity.');
-      showToast('Authentication Failure: Invalid credentials.', 'error');
-      return;
-    }
-
-    if (user.password !== password) {
-      const attempts = (failedAttempts[email] || 0) + 1;
-      setFailedAttempts(prev => ({ ...prev, [email]: attempts }));
-
-      if (attempts >= 5) {
-        // Trigger lockout
-        setLockoutTimers(prev => ({ ...prev, [email]: 30 }));
-        setFailedAttempts(prev => ({ ...prev, [email]: 0 }));
-        onLogTriggered(
-          'SECURITY_BRUTE_FORCE_LOCKOUT', 
-          'users', 
-          email, 
-          'FAILURE', 
-          `Rule AUTH-02 Triggered: Locked out account ${email} for 30s after 5 consecutive failures.`
-        );
-        showToast('Security Alert: Account has been locked for 30 seconds due to 5 consecutive failed login attempts.', 'error');
-      } else {
-        onLogTriggered('AUTH_LOGIN_FAILED', 'users', email, 'FAILURE', `Incorrect credentials. Attempt ${attempts}/5 before lockout.`);
-        showToast(`Authentication Failure: Invalid password. (${attempts}/5 failed attempts before account lockout).`, 'error');
-      }
-      return;
-    }
-
-    // Success login
-    setFailedAttempts(prev => ({ ...prev, [email]: 0 }));
-    const defaultRole = user.roles[0];
-    const loggedIn = { email: user.email, roles: user.roles, currentRole: defaultRole };
-    setLoggedInUser(loggedIn);
-    setSessionExpiry(90);
-    
-    onLogTriggered(
-      'AUTH_LOGIN_SUCCESS', 
-      'users', 
-      user.email, 
-      'SUCCESS', 
-      `Successfully authenticated with context roles: [${user.roles.join(', ')}]. Active identity set to: ${defaultRole}`
-    );
-
-    onSessionChanged({
-      email: user.email,
-      role: defaultRole,
-      permissions: customRolesPermissions[defaultRole] || []
-    });
   };
 
   const handleRoleSwitch = (newRole: string) => {
-    if (!loggedInUser) return;
-    setLoggedInUser(prev => prev ? { ...prev, currentRole: newRole } : null);
-    
-    // Reset session timer as active interaction
-    setSessionExpiry(90);
-
-    onLogTriggered(
-      'AUTH_ROLE_IDENTITY_SWITCH', 
-      'user_roles', 
-      loggedInUser.email, 
-      'SUCCESS', 
-      `Rule AUTH-06 enforced: Swapped active session context to "${newRole}". Exchanged security tokens with updated permission maps.`
-    );
-
-    onSessionChanged({
-      email: loggedInUser.email,
-      role: newRole,
-      permissions: customRolesPermissions[newRole] || []
-    });
+    if (!userSession || newRole === userSession.role) return;
+    onSwitchRole(newRole).catch(err => showToast(errorMessage(err), 'error'));
   };
 
-  const handleLogout = (reason = 'User initiated logout procedure.') => {
-    if (!loggedInUser) return;
-    
-    onLogTriggered('AUTH_LOGOUT', 'users', loggedInUser.email, 'SUCCESS', reason);
-    setLoggedInUser(null);
-    setSessionExpiry(null);
+  const handleLogout = () => {
     setEmail('');
     setPassword('');
-    onSessionChanged(null);
+    void onLogout();
   };
 
   const togglePermissionInMatrix = (role: string, permission: string) => {
-    setCustomRolesPermissions(prev => {
-      const updatedPermissions = prev[role].includes(permission)
-        ? prev[role].filter(p => p !== permission)
-        : [...prev[role], permission];
+    if (!userSession?.permissions.includes('MANAGE_ROLES')) {
+      showToast('Security Alert: 403 Forbidden. Only users holding MANAGE_ROLES permission (ADMIN role) may alter the access matrix.', 'error');
+      return;
+    }
+    const current = customRolesPermissions[role] || [];
+    const updatedPermissions = current.includes(permission)
+      ? current.filter(p => p !== permission)
+      : [...current, permission];
 
-      onLogTriggered(
-        'RBAC_PERMISSION_UPDATED',
-        'role_permissions',
-        `${role}:${permission}`,
-        'WARNING',
-        `Security alteration: Admin redefined privileges for Role "${role}". Toggled permission "${permission}".`
-      );
-
-      // If logged in as that role, update current session on the fly
-      if (loggedInUser && loggedInUser.currentRole === role) {
-        onSessionChanged({
-          email: loggedInUser.email,
-          role: role,
-          permissions: updatedPermissions
-        });
-      }
-
-      return {
-        ...prev,
-        [role]: updatedPermissions
-      };
-    });
+    api<RoleRecord>('PUT', `/roles/${encodeURIComponent(role)}/permissions`, { permissions: updatedPermissions })
+      .then(saved => {
+        setCustomRolesPermissions(prev => ({ ...prev, [saved.code]: saved.permissions }));
+        onPermissionsChanged();
+      })
+      .catch(err => showToast(errorMessage(err), 'error'));
   };
 
   // List of all unique permission tags across system
@@ -238,7 +134,7 @@ export default function AuthGateway({ onLogTriggered, onSessionChanged, maintena
             </p>
           </div>
 
-          {!loggedInUser ? (
+          {!userSession ? (
             <form onSubmit={handleLogin} className="space-y-3.5 mt-5" id="form-login">
               <div>
                 <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Business Email</label>
@@ -273,6 +169,7 @@ export default function AuthGateway({ onLogTriggered, onSessionChanged, maintena
               <button
                 type="submit"
                 id="btn-login-submit"
+                disabled={submitting}
                 className="w-full bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-slate-950 font-semibold py-2 px-4 rounded text-sm transition-colors shadow-lg"
               >
                 Authenticate Identity
@@ -282,8 +179,8 @@ export default function AuthGateway({ onLogTriggered, onSessionChanged, maintena
             <div className="space-y-4 mt-5" id="logged-in-profile">
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] text-slate-500 font-mono">AUTHENTICATED AS</span>
-                  <p className="text-sm font-semibold text-slate-200 mt-0.5">{loggedInUser.email}</p>
+                  <span className="text-[10px] text-slate-500 font-mono">Authenticated as</span>
+                  <p className="text-sm font-semibold text-slate-200 mt-0.5">{userSession.email}</p>
                 </div>
                 <Unlock className="w-5 h-5 text-emerald-400" />
               </div>
@@ -292,8 +189,8 @@ export default function AuthGateway({ onLogTriggered, onSessionChanged, maintena
               <div className="p-3.5 bg-slate-950/40 border border-slate-850 rounded-lg">
                 <span className="text-[10px] text-slate-500 font-mono block mb-1.5 uppercase">Identity Selector (Rule AUTH-06)</span>
                 <div className="flex flex-wrap gap-1.5">
-                  {loggedInUser.roles.map(role => {
-                    const isActive = loggedInUser.currentRole === role;
+                  {userSession.roles.map(role => {
+                    const isActive = userSession.role === role;
                     return (
                       <button
                         key={role}
@@ -320,8 +217,8 @@ export default function AuthGateway({ onLogTriggered, onSessionChanged, maintena
                 <div className="p-2.5 bg-slate-950 border border-slate-850 rounded flex items-center gap-2">
                   <Clock className="w-3.5 h-3.5 text-yellow-400" />
                   <div>
-                    <span className="text-[9px] text-slate-500 block uppercase font-mono">Session Limit</span>
-                    <span className="font-mono font-semibold text-slate-200">{sessionExpiry}s remaining</span>
+                    <span className="text-[9px] text-slate-500 block uppercase font-mono">Access Token Life</span>
+                    <span className="font-mono font-semibold text-slate-200">15 min, auto-renewed</span>
                   </div>
                 </div>
                 <div className="p-2.5 bg-slate-950 border border-slate-850 rounded flex items-center gap-2">
@@ -329,7 +226,7 @@ export default function AuthGateway({ onLogTriggered, onSessionChanged, maintena
                   <div>
                     <span className="text-[9px] text-slate-500 block uppercase font-mono">Active Scope</span>
                     <span className="font-mono font-semibold text-slate-200">
-                      {customRolesPermissions[loggedInUser.currentRole]?.length || 0} Perms
+                      {userSession.permissions.length} Perms
                     </span>
                   </div>
                 </div>
@@ -348,38 +245,41 @@ export default function AuthGateway({ onLogTriggered, onSessionChanged, maintena
 
         <div className="p-4 bg-slate-900/10 border border-slate-850 rounded-xl" id="identity-profiles">
           <h4 className="font-display font-medium text-xs text-slate-400 uppercase tracking-wider mb-3">Authorized Identity Profiles</h4>
-          <div className="space-y-2">
-            {SAMPLE_USERS.map((user, uIdx) => {
-              const lockoutTime = lockoutTimers[user.email] || 0;
-              return (
-                <div 
-                  key={uIdx}
-                  className={`p-2.5 rounded border text-xs font-mono transition-all ${
-                    lockoutTime > 0 
-                      ? 'bg-red-950/20 border-red-900/40 opacity-70' 
-                      : 'bg-slate-900/30 border-slate-800/60'
-                  }`}
+          {authMeta?.demoMode ? (
+            <div className="space-y-2">
+              {authMeta.demoAccounts.map(account => (
+                <button
+                  key={account.email}
+                  type="button"
+                  onClick={() => {
+                    setEmail(account.email);
+                    setPassword(authMeta.demoPassword || '');
+                  }}
+                  className="w-full text-left p-2.5 rounded border text-xs font-mono transition-all bg-slate-900/30 border-slate-800/60 hover:border-slate-700"
                 >
                   <div className="flex justify-between items-center mb-1">
-                    <span className="font-semibold text-slate-200">{user.email}</span>
-                    {lockoutTime > 0 ? (
-                      <span className="text-[9px] bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded flex items-center gap-1">
-                        <AlertTriangle className="w-2.5 h-2.5 animate-bounce" />
-                        LOCKED ({lockoutTime}s)
-                      </span>
-                    ) : (
-                      <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">
-                        {user.roles.join(' + ')}
-                      </span>
-                    )}
+                    <span className="font-semibold text-slate-200">{account.email}</span>
+                    <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">
+                      {account.role}
+                    </span>
                   </div>
                   <div className="flex justify-between text-slate-450 text-[10px]">
-                    <span>Credential Visibility: <span className="text-slate-300 font-bold">Protected</span></span>
+                    <span>Demo account: <span className="text-slate-300 font-bold">click to fill credentials</span></span>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Demo identities are disabled on this server. Sign in with your own account.
+            </p>
+          )}
+          {maintenanceMode && (
+            <p className="text-[10px] text-red-400 font-mono mt-3 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              Maintenance Mode: only administrator identities can sign in.
+            </p>
+          )}
         </div>
       </div>
 
@@ -397,7 +297,7 @@ export default function AuthGateway({ onLogTriggered, onSessionChanged, maintena
 
         {/* Matrix Role Selector tabs */}
         <div className="flex flex-wrap gap-1 p-1 bg-slate-950 border border-slate-850 rounded-lg mt-4.5">
-          {Object.keys(STAKEHOLDER_ROLES).map(role => {
+          {Object.keys(customRolesPermissions).map(role => {
             const isCurrent = activeMatrixRole === role;
             return (
               <button
@@ -451,11 +351,11 @@ export default function AuthGateway({ onLogTriggered, onSessionChanged, maintena
                     {isAssigned ? (
                       <span className="text-[10px] font-mono font-bold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
                         <CheckCircle className="w-3 h-3" />
-                        GRANTED
+                        Granted
                       </span>
                     ) : (
                       <span className="text-[10px] font-mono font-bold text-slate-500 flex items-center gap-1 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-850">
-                        RESTRICTED
+                        Restricted
                       </span>
                     )}
                   </div>

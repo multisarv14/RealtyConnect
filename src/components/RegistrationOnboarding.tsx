@@ -662,7 +662,7 @@ export default function RegistrationOnboarding({
             <h4 className="text-sm font-extrabold text-white flex items-center gap-2">
               Registration & Business Identity Module
               <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/15 px-2 py-0.5 rounded uppercase">
-                PRODUCTION BASELINED
+                Production Baselined
               </span>
             </h4>
             <p className="text-xs text-slate-400 mt-1">
@@ -685,7 +685,7 @@ export default function RegistrationOnboarding({
       {showSpecsDrawer && (
         <div className="bg-slate-950 border border-slate-850 rounded-xl p-5 space-y-6 animate-fade-in relative overflow-hidden">
           <div className="absolute top-0 right-0 bg-emerald-500/5 text-emerald-400 border-l border-b border-slate-850 text-[9px] font-mono px-3 py-1 font-bold">
-            SECURE SANDBOX WORKSPACE
+            Secure Sandbox Workspace
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -693,7 +693,7 @@ export default function RegistrationOnboarding({
             {/* COLUMN 1 & 2: Architectural Blueprints & Code Contracts */}
             <div className="lg:col-span-2 space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-850 pb-2">
-                <span className="text-xs font-mono font-bold text-slate-500 uppercase tracking-widest">MODULE SPECIFICATIONS:</span>
+                <span className="text-xs font-mono font-bold text-slate-500 uppercase tracking-widest">Module Specifications:</span>
                 <div className="flex flex-wrap gap-1">
                   {Object.keys(TECHNICAL_BLUEPRINT_TABS).map(tabKey => {
                     const active = activeSpecTab === tabKey;
@@ -1040,7 +1040,7 @@ export default function RegistrationOnboarding({
                     {verifiedEntity && (
                       <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/20 space-y-3.5 relative overflow-hidden animate-fade-in">
                         <div className="absolute top-0 right-0 bg-emerald-500/10 text-emerald-400 border-l border-b border-emerald-500/15 text-[8px] font-mono font-bold px-2.5 py-0.5 rounded-bl uppercase">
-                          REGISTRY ACTIVE MATCH
+                          Registry Active Match
                         </div>
 
                         <div className="space-y-1">
@@ -1050,14 +1050,14 @@ export default function RegistrationOnboarding({
 
                         <div className="grid grid-cols-2 gap-3.5 text-[11px] border-t border-slate-900 pt-3">
                           <div>
-                            <span className="text-slate-500 text-[9px] font-mono block">TRUST STATUS</span>
+                            <span className="text-slate-500 text-[9px] font-mono block">Trust Status</span>
                             <span className="text-emerald-400 font-bold font-mono text-[10px] flex items-center gap-1 mt-0.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                               {activeRole === 'builder' ? 'RERA Certified' : activeRole === 'bank' ? 'RBI Scheduled' : 'Verified Taxpayer'}
                             </span>
                           </div>
                           <div>
-                            <span className="text-slate-500 text-[9px] font-mono block">CORPORATE COI</span>
+                            <span className="text-slate-500 text-[9px] font-mono block">Corporate Coi</span>
                             <span className="text-slate-300 font-mono mt-0.5 block">{verifiedEntity.incorporationNo}</span>
                           </div>
                         </div>
@@ -1747,7 +1747,7 @@ export default function RegistrationOnboarding({
                         <span className="line-through text-slate-500">Subscribe to Membership</span>
                       </div>
                       <span className="text-[8px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-bold">
-                        ACTIVE
+                        Active
                       </span>
                     </div>
 

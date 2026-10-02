@@ -12,6 +12,13 @@ export default defineConfig(() => {
       },
     },
     server: {
+      // The API runs as a separate process in development (npm run dev:server).
+      proxy: {
+        '/api': {
+          target: `http://localhost:${process.env.API_PORT || 4000}`,
+          xfwd: true,
+        },
+      },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',

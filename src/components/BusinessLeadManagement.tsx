@@ -1,3 +1,5 @@
+import { currentUserName } from '../lib/identity';
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect } from 'react';
 import { 
   Building, 
@@ -255,10 +257,10 @@ const USERS = [
 ];
 
 export default function BusinessLeadManagement({ userSession, onLogTriggered, showToast, setActiveViewMode }: BusinessLeadManagementProps) {
-  // Master Lead State with persistent localStorage synchronization
+  // Master Lead State with persistent appStore synchronization
   const [leads, setLeads] = useState<Lead[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_leads');
+      const saved = appStore.getItem('realtyconnect_leads');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.length > 0) return parsed;
@@ -267,16 +269,16 @@ export default function BusinessLeadManagement({ userSession, onLogTriggered, sh
     return SEED_LEADS;
   });
 
-  // Keep localStorage in sync
+  // Keep appStore in sync
   useEffect(() => {
-    localStorage.setItem('realtyconnect_leads', JSON.stringify(leads));
+    appStore.setItem('realtyconnect_leads', JSON.stringify(leads));
   }, [leads]);
 
   // Syncing external marketplace/enquiry updates
   useEffect(() => {
     const importExternalInquiries = () => {
       try {
-        const savedMktEnquiries = localStorage.getItem('realtyconnect_product_enquiries');
+        const savedMktEnquiries = appStore.getItem('realtyconnect_product_enquiries');
         if (savedMktEnquiries) {
           const mktEnquiries = JSON.parse(savedMktEnquiries);
           let updated = false;
@@ -328,7 +330,7 @@ export default function BusinessLeadManagement({ userSession, onLogTriggered, sh
 
     importExternalInquiries();
     window.addEventListener('storage', importExternalInquiries);
-    // Periodically poll since other components might write to localStorage in the same tab without storage event
+    // Periodically poll since other components might write to appStore in the same tab without storage event
     const interval = setInterval(importExternalInquiries, 5000);
     return () => {
       window.removeEventListener('storage', importExternalInquiries);
@@ -709,7 +711,7 @@ export default function BusinessLeadManagement({ userSession, onLogTriggered, sh
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-bold font-mono px-2 py-0.5 rounded-full uppercase tracking-wider">
-              Sprint 13 Active Engine
+              Lead Management
             </span>
             <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[9px] font-bold font-mono px-2 py-0.5 rounded-full uppercase tracking-wider">
               Control Center Sync
@@ -1597,7 +1599,7 @@ export default function BusinessLeadManagement({ userSession, onLogTriggered, sh
                           priority: selectedLead.priority === 'Urgent' ? 'Urgent' as const : selectedLead.priority === 'High' ? 'High' as const : 'Normal' as const,
                           pinned: false,
                           archived: false,
-                          assignedExecutive: selectedLead.assignedTo || 'Vikram Malhotra',
+                          assignedExecutive: selectedLead.assignedTo || currentUserName(),
                           relatedEntity: {
                             type: 'Lead' as const,
                             id: selectedLead.id,
@@ -1626,19 +1628,19 @@ export default function BusinessLeadManagement({ userSession, onLogTriggered, sh
                         };
 
                         try {
-                          const existingJson = localStorage.getItem('realtyconnect_conversations');
+                          const existingJson = appStore.getItem('realtyconnect_conversations');
                           let conversationsList = existingJson ? JSON.parse(existingJson) : [];
                           // Check if conversation already exists
                           const existsIdx = conversationsList.findIndex((c: any) => c.id === newConv.id || (c.relatedEntity && c.relatedEntity.id === selectedLead.id));
                           if (existsIdx === -1) {
                             conversationsList.unshift(newConv);
-                            localStorage.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
+                            appStore.setItem('realtyconnect_conversations', JSON.stringify(conversationsList));
                           } else {
                             // Focus on the existing one
                             newConv.id = conversationsList[existsIdx].id;
                           }
                           
-                          localStorage.setItem('realtyconnect_active_conversation_id', newConv.id);
+                          appStore.setItem('realtyconnect_active_conversation_id', newConv.id);
                           if (setActiveViewMode) {
                             setActiveViewMode('messaging');
                             showToast(`Connected to B2B Messaging thread for ${selectedLead.company}`, 'success');

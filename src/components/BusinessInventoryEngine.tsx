@@ -1,3 +1,4 @@
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Building2, Users, CheckCircle2, ArrowRight, MapPin, Mail, Phone, 
@@ -323,7 +324,7 @@ export default function BusinessInventoryEngine({
   // Persistence using local storage
   const [items, setItems] = useState<InventoryItem[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_inventory_items');
+      const saved = appStore.getItem('realtyconnect_inventory_items');
       return saved ? JSON.parse(saved) : INITIAL_ITEMS;
     } catch (e) {
       return INITIAL_ITEMS;
@@ -332,7 +333,7 @@ export default function BusinessInventoryEngine({
 
   const [warehouses, setWarehouses] = useState<Warehouse[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_inventory_warehouses');
+      const saved = appStore.getItem('realtyconnect_inventory_warehouses');
       return saved ? JSON.parse(saved) : INITIAL_WAREHOUSES;
     } catch (e) {
       return INITIAL_WAREHOUSES;
@@ -341,7 +342,7 @@ export default function BusinessInventoryEngine({
 
   const [movements, setMovements] = useState<StockMovement[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_inventory_movements');
+      const saved = appStore.getItem('realtyconnect_inventory_movements');
       return saved ? JSON.parse(saved) : INITIAL_MOVEMENTS;
     } catch (e) {
       return INITIAL_MOVEMENTS;
@@ -350,7 +351,7 @@ export default function BusinessInventoryEngine({
 
   const [notifications, setNotifications] = useState<InventoryNotification[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_inventory_notifications');
+      const saved = appStore.getItem('realtyconnect_inventory_notifications');
       return saved ? JSON.parse(saved) : INITIAL_NOTIFICATIONS;
     } catch (e) {
       return INITIAL_NOTIFICATIONS;
@@ -358,19 +359,19 @@ export default function BusinessInventoryEngine({
   });
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_inventory_items', JSON.stringify(items));
+    appStore.setItem('realtyconnect_inventory_items', JSON.stringify(items));
   }, [items]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_inventory_warehouses', JSON.stringify(warehouses));
+    appStore.setItem('realtyconnect_inventory_warehouses', JSON.stringify(warehouses));
   }, [warehouses]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_inventory_movements', JSON.stringify(movements));
+    appStore.setItem('realtyconnect_inventory_movements', JSON.stringify(movements));
   }, [movements]);
 
   useEffect(() => {
-    localStorage.setItem('realtyconnect_inventory_notifications', JSON.stringify(notifications));
+    appStore.setItem('realtyconnect_inventory_notifications', JSON.stringify(notifications));
   }, [notifications]);
 
   // Main navigation tabs
@@ -743,7 +744,7 @@ export default function BusinessInventoryEngine({
         <div>
           <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono text-[9px] uppercase tracking-widest font-bold mb-2">
             <Sparkle className="w-3 h-3 text-amber-400 animate-pulse" />
-            Sprint 19 — RealtyConnect Inventory
+            Inventory Management
           </div>
           <h2 className="text-xl md:text-2xl font-extrabold text-white flex items-center gap-2">
             <Layers className="w-5 h-5 text-amber-500" />
@@ -1288,15 +1289,15 @@ export default function BusinessInventoryEngine({
 
                     <div className="bg-slate-950 p-2 rounded flex items-center justify-between text-xs font-mono border border-slate-900">
                       <div>
-                        <span className="text-[8px] text-slate-500 block">AVAILABLE</span>
+                        <span className="text-[8px] text-slate-500 block">Available</span>
                         <span className="text-emerald-400 font-bold">{itm.availableStock} {itm.unitOfMeasure}</span>
                       </div>
                       <div>
-                        <span className="text-[8px] text-slate-500 block">RESERVED</span>
+                        <span className="text-[8px] text-slate-500 block">Reserved</span>
                         <span className="text-purple-400 font-bold">{itm.reservedStock} {itm.unitOfMeasure}</span>
                       </div>
                       <div>
-                        <span className="text-[8px] text-slate-500 block">CURRENT STOCK</span>
+                        <span className="text-[8px] text-slate-500 block">Current Stock</span>
                         <span className="text-slate-200 font-bold">{itm.currentStock} {itm.unitOfMeasure}</span>
                       </div>
                     </div>
@@ -1622,15 +1623,15 @@ export default function BusinessInventoryEngine({
                   {/* Real Allocation Stats */}
                   <div className="grid grid-cols-3 gap-3 bg-slate-950 p-3 rounded border border-slate-900 text-center font-mono text-xs">
                     <div>
-                      <span className="text-[8px] text-slate-500 block">MATERIAL SKUS</span>
+                      <span className="text-[8px] text-slate-500 block">Material SKUs</span>
                       <span className="text-white font-bold">{totalItemsCount} Types</span>
                     </div>
                     <div>
-                      <span className="text-[8px] text-slate-500 block">ALLOCATED STOCK</span>
+                      <span className="text-[8px] text-slate-500 block">Allocated Stock</span>
                       <span className="text-emerald-400 font-bold">{totalStockVal} units</span>
                     </div>
                     <div>
-                      <span className="text-[8px] text-slate-500 block font-bold">RESERVED MAT.</span>
+                      <span className="text-[8px] text-slate-500 block font-bold">Reserved Mat.</span>
                       <span className="text-purple-400 font-bold">{reservedStockVal} units</span>
                     </div>
                   </div>
@@ -2038,7 +2039,7 @@ export default function BusinessInventoryEngine({
             <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
               <div>
                 <h3 className="text-sm font-bold text-white uppercase tracking-tight">Issue Material Stock Movement</h3>
-                <p className="text-[10px] text-slate-400 font-mono mt-0.5">TARGET: {selectedItem.name} ({selectedItem.code})</p>
+                <p className="text-[10px] text-slate-400 font-mono mt-0.5">Target: {selectedItem.name} ({selectedItem.code})</p>
               </div>
               <button 
                 onClick={() => setIsStockAdjustmentModalOpen(false)}

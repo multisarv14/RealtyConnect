@@ -1,3 +1,5 @@
+import { currentUserName } from '../lib/identity';
+import { appStore } from '../lib/appStore';
 import React, { useState, useEffect } from 'react';
 import { 
   Building2, Users, ClipboardList, ShieldCheck, TrendingUp, Sparkles, Plus, Search, Filter, 
@@ -185,18 +187,18 @@ export default function BusinessCrmEngine({
   // List of accounts
   const [accounts, setAccounts] = useState<CrmAccount[]>(() => {
     try {
-      const saved = localStorage.getItem('realtyconnect_crm_accounts');
+      const saved = appStore.getItem('realtyconnect_crm_accounts');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     // Prepopulate with seed accounts merged with registry or static
-    localStorage.setItem('realtyconnect_crm_accounts', JSON.stringify(SEED_CRM_ACCOUNTS));
+    appStore.setItem('realtyconnect_crm_accounts', JSON.stringify(SEED_CRM_ACCOUNTS));
     return SEED_CRM_ACCOUNTS;
   });
 
   // Selected Account for details inspector
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(() => {
     try {
-      const activeId = localStorage.getItem('realtyconnect_active_crm_account_id');
+      const activeId = appStore.getItem('realtyconnect_active_crm_account_id');
       if (activeId) return activeId;
     } catch(e) {}
     return SEED_CRM_ACCOUNTS[0]?.id || null;
@@ -232,7 +234,7 @@ export default function BusinessCrmEngine({
     verificationStatus: 'Verified',
     membershipStatus: 'Standard',
     relationshipStatus: 'Warm',
-    assignedManager: 'Vikram Malhotra',
+    assignedManager: currentUserName(),
     currentStage: 'Prospect',
     businessValue: 10,
     contacts: []
@@ -252,22 +254,22 @@ export default function BusinessCrmEngine({
   const [newContact, setNewContact] = useState<Partial<CrmContact>>({ name: '', email: '', phone: '', role: 'Secondary Contact' });
   const [newDoc, setNewDoc] = useState({ name: '', category: 'Contract' as const, size: '2.1 MB' });
 
-  // Load and synchronize external modules from localStorage
+  // Load and synchronize external modules from appStore
   const loadExternalData = () => {
     try {
-      const leads = localStorage.getItem('realtyconnect_leads');
+      const leads = appStore.getItem('realtyconnect_leads');
       if (leads) setExternalLeads(JSON.parse(leads));
 
-      const meets = localStorage.getItem('realtyconnect_meetings');
+      const meets = appStore.getItem('realtyconnect_meetings');
       if (meets) setExternalMeetings(JSON.parse(meets));
 
-      const convs = localStorage.getItem('realtyconnect_conversations');
+      const convs = appStore.getItem('realtyconnect_conversations');
       if (convs) setExternalConversations(JSON.parse(convs));
 
-      const rfqs = localStorage.getItem('realtyconnect_rfq_list');
+      const rfqs = appStore.getItem('realtyconnect_rfq_list');
       if (rfqs) setExternalRfqs(JSON.parse(rfqs));
 
-      const productEnqs = localStorage.getItem('realtyconnect_product_enquiries');
+      const productEnqs = appStore.getItem('realtyconnect_product_enquiries');
       if (productEnqs) setExternalProductEnquiries(JSON.parse(productEnqs));
     } catch (e) {
       console.error('Error fetching external storage lists', e);
@@ -284,7 +286,7 @@ export default function BusinessCrmEngine({
   // Save CRM Accounts list to state & storage
   const saveCrmAccountsList = (updatedList: CrmAccount[]) => {
     setAccounts(updatedList);
-    localStorage.setItem('realtyconnect_crm_accounts', JSON.stringify(updatedList));
+    appStore.setItem('realtyconnect_crm_accounts', JSON.stringify(updatedList));
   };
 
   // Find the selected account
@@ -293,7 +295,7 @@ export default function BusinessCrmEngine({
   // Selected account ID state synchronizer
   const handleSelectAccount = (id: string) => {
     setSelectedAccountId(id);
-    localStorage.setItem('realtyconnect_active_crm_account_id', id);
+    appStore.setItem('realtyconnect_active_crm_account_id', id);
   };
 
   // Generate system notifications helper
@@ -574,7 +576,7 @@ export default function BusinessCrmEngine({
       verificationStatus: 'Verified',
       membershipStatus: 'Premium Gold',
       relationshipStatus: 'Hot',
-      assignedManager: 'Vikram Malhotra',
+      assignedManager: currentUserName(),
       customerSince: new Date().toISOString().split('T')[0],
       businessValue: lead.priority === 'High' ? 120 : lead.priority === 'Urgent' ? 240 : 50,
       currentStage: 'Qualified',
@@ -603,9 +605,9 @@ export default function BusinessCrmEngine({
     const updatedAccounts = [newCrmAccount, ...accounts];
     saveCrmAccountsList(updatedAccounts);
 
-    // 2. Update status of the Lead in localStorage to 'Converted'
+    // 2. Update status of the Lead in appStore to 'Converted'
     try {
-      const savedLeadsStr = localStorage.getItem('realtyconnect_leads');
+      const savedLeadsStr = appStore.getItem('realtyconnect_leads');
       if (savedLeadsStr) {
         const currentLeads = JSON.parse(savedLeadsStr);
         const updatedLeads = currentLeads.map((l: any) => {
@@ -621,7 +623,7 @@ export default function BusinessCrmEngine({
           }
           return l;
         });
-        localStorage.setItem('realtyconnect_leads', JSON.stringify(updatedLeads));
+        appStore.setItem('realtyconnect_leads', JSON.stringify(updatedLeads));
         setExternalLeads(updatedLeads);
       }
     } catch(e) { console.error(e); }
@@ -650,7 +652,7 @@ export default function BusinessCrmEngine({
       verificationStatus: newAccountForm.verificationStatus as any,
       membershipStatus: newAccountForm.membershipStatus as any,
       relationshipStatus: newAccountForm.relationshipStatus as any,
-      assignedManager: newAccountForm.assignedManager || 'Vikram Malhotra',
+      assignedManager: newAccountForm.assignedManager || currentUserName(),
       customerSince: new Date().toISOString().split('T')[0],
       businessValue: Number(newAccountForm.businessValue) || 10,
       currentStage: newAccountForm.currentStage as any,
@@ -684,7 +686,7 @@ export default function BusinessCrmEngine({
       verificationStatus: 'Verified',
       membershipStatus: 'Standard',
       relationshipStatus: 'Warm',
-      assignedManager: 'Vikram Malhotra',
+      assignedManager: currentUserName(),
       currentStage: 'Prospect',
       businessValue: 10,
       contacts: []
@@ -790,9 +792,9 @@ export default function BusinessCrmEngine({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-mono uppercase bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded font-extrabold tracking-widest">
-              SPRINT 16 READY
+              Customer CRM
             </span>
-            <span className="text-[10px] font-mono text-slate-500">• SINGLE SOURCE OF TRUTH</span>
+            <span className="text-[10px] font-mono text-slate-500">• One record for every account</span>
           </div>
           <h1 className="text-xl font-display font-black text-white uppercase tracking-tight flex items-center gap-2 mt-1">
             <Building2 className="w-5 h-5 text-indigo-500" />
@@ -807,7 +809,7 @@ export default function BusinessCrmEngine({
             className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono font-bold text-xs px-4 py-2 rounded-xl border border-indigo-500 shadow-lg shadow-indigo-600/10 flex items-center gap-1.5 transition-all"
           >
             <Plus className="w-4 h-4" />
-            REGISTER CORPORATE CLIENT
+            Register Corporate Client
           </button>
         </div>
       </div>
@@ -976,13 +978,13 @@ export default function BusinessCrmEngine({
                   onClick={() => setViewLayout('list')}
                   className={`px-2 py-0.5 rounded font-mono text-[9px] ${viewLayout === 'list' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400'}`}
                 >
-                  LIST
+                  List
                 </button>
                 <button
                   onClick={() => setViewLayout('grid')}
                   className={`px-2 py-0.5 rounded font-mono text-[9px] ${viewLayout === 'grid' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400'}`}
                 >
-                  GRID
+                  Grid
                 </button>
               </div>
             </div>
@@ -1255,7 +1257,7 @@ export default function BusinessCrmEngine({
                         className="flex-1 bg-slate-900 border border-slate-850 hover:border-slate-800 focus:border-indigo-500 rounded-lg p-2 text-xs text-white outline-none"
                       />
                       <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono font-bold text-[10px] px-3.5 rounded-lg border border-indigo-500 shrink-0">
-                        LOG NOTE
+                        Log Note
                       </button>
                     </form>
                   )}
@@ -1286,7 +1288,7 @@ export default function BusinessCrmEngine({
                         </select>
 
                         <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono font-bold text-[10px] rounded border border-indigo-500">
-                          REGISTER CALL
+                          Register Call
                         </button>
                       </div>
 
@@ -1318,7 +1320,7 @@ export default function BusinessCrmEngine({
                           className="bg-slate-900 border border-slate-850 text-[10px] rounded p-1.5 outline-none text-slate-200 font-mono"
                         />
                         <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono font-bold text-[10px] rounded border border-indigo-500">
-                          REGISTER VISIT LOG
+                          Register Visit Log
                         </button>
                       </div>
                       <input
@@ -1353,7 +1355,7 @@ export default function BusinessCrmEngine({
                             priority: 'High',
                             agenda: 'Review commercial rate sheets, RERA compliance certificates, and credit limits.'
                           };
-                          localStorage.setItem('realtyconnect_prefill_meeting', JSON.stringify(data));
+                          appStore.setItem('realtyconnect_prefill_meeting', JSON.stringify(data));
                           if (setActiveViewMode) {
                             setActiveViewMode('meetings');
                             showToast(`Configured calendar prefill for ${selectedAccount.name}`, 'success');
@@ -1361,7 +1363,7 @@ export default function BusinessCrmEngine({
                         }}
                         className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono font-bold text-[10px] px-3.5 py-1.5 rounded-lg border border-indigo-500 shrink-0"
                       >
-                        LAUNCH CALENDAR WIZARD
+                        Launch Calendar Wizard
                       </button>
                     </div>
                   )}
@@ -1405,7 +1407,7 @@ export default function BusinessCrmEngine({
                           <option value="Emergency Contact">Emergency Contact</option>
                         </select>
                         <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono font-bold text-[10px] px-3.5 rounded border border-indigo-500">
-                          LINK
+                          Link
                         </button>
                       </div>
                     </form>
@@ -1432,7 +1434,7 @@ export default function BusinessCrmEngine({
                         <option value="Drawing">Engineering Drawing</option>
                       </select>
                       <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-mono font-bold text-[10px] rounded border border-indigo-500">
-                        LINK DOCUMENT
+                        Link Document
                       </button>
                     </form>
                   )}
@@ -1442,7 +1444,7 @@ export default function BusinessCrmEngine({
                       <div className="bg-yellow-950/15 border border-yellow-900/30 p-2.5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-left">
                         <div>
                           <span className="text-[9px] font-mono font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-1.5 py-0.5 rounded uppercase">
-                            LEAD CONVERSION HUB
+                            Lead Conversion Hub
                           </span>
                           <h4 className="font-bold text-xs text-yellow-200 mt-1">Ready for upgrade into Enterprise Relationships?</h4>
                           <p className="text-[10px] text-slate-400 mt-0.5">Below are active B2B sales pipeline leads that can be fully integrated with a single click.</p>
@@ -1492,7 +1494,7 @@ export default function BusinessCrmEngine({
                       360° RELATIONSHIP LIFECYCLE TIMELINE
                     </span>
                     <span className="text-[9px] font-mono bg-slate-900 text-indigo-400 border border-slate-850 px-2 py-0.2 rounded font-bold uppercase">
-                      AUTO-AGGREGATED FROM ALL CHANNELS
+                      Auto-Aggregated from All Channels
                     </span>
                   </div>
 
@@ -1555,7 +1557,7 @@ export default function BusinessCrmEngine({
                   <div className="p-3 bg-slate-950/40 border-b border-slate-900 flex items-center justify-between shrink-0">
                     <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                       <Users className="w-4 h-4 text-slate-400" />
-                      LINKED CONTACTS ({selectedAccount.contacts?.length || 0})
+                      Linked Contacts ({selectedAccount.contacts?.length || 0})
                     </span>
                   </div>
 
@@ -1771,13 +1773,13 @@ export default function BusinessCrmEngine({
                   onClick={() => setIsAddModalOpen(false)}
                   className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-400 font-mono text-[10px] font-bold rounded-lg border border-slate-850"
                 >
-                  CANCEL
+                  Cancel
                 </button>
                 <button
                   type="submit"
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-[10px] font-bold rounded-lg border border-indigo-500 shadow-lg shadow-indigo-600/15"
                 >
-                  SAVE & LINK RELATIONSHIP
+                  Save & Link Relationship
                 </button>
               </div>
 
@@ -1879,13 +1881,13 @@ export default function BusinessCrmEngine({
                   onClick={() => setIsEditModalOpen(false)}
                   className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-400 font-mono text-[10px] font-bold rounded-lg border border-slate-850"
                 >
-                  CANCEL
+                  Cancel
                 </button>
                 <button
                   type="submit"
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-[10px] font-bold rounded-lg border border-indigo-500 shadow-lg"
                 >
-                  SAVE STAGE TRANSITION
+                  Save Stage Transition
                 </button>
               </div>
 

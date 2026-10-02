@@ -3,6 +3,9 @@
  * A premium professional B2B Opportunity Exchange portal for real estate stakeholders.
  */
 
+import { currentOrgName } from '../lib/identity';
+import { appStore } from '../lib/appStore';
+import { usePersistentState } from '../lib/usePersistentState';
 import React, { useState, useMemo } from 'react';
 import { 
   Briefcase, 
@@ -328,9 +331,9 @@ export default function BusinessOpportunitiesEngine({
 }: BusinessOpportunitiesEngineProps) {
 
   // Central opportunities state
-  const [opportunities, setOpportunities] = useState<B2BOpportunity[]>(INITIAL_OPPORTUNITIES);
-  const [savedOppIds, setSavedOppIds] = useState<string[]>(['opp-1', 'opp-4']);
-  const [respondedOpps, setRespondedOpps] = useState<Record<string, { proposalText: string; remarks: string; date: string }>>({
+  const [opportunities, setOpportunities] = usePersistentState<B2BOpportunity[]>('rc_opportunities', INITIAL_OPPORTUNITIES);
+  const [savedOppIds, setSavedOppIds] = usePersistentState<string[]>('rc_opp_saved_ids', ['opp-1', 'opp-4']);
+  const [respondedOpps, setRespondedOpps] = usePersistentState<Record<string, { proposalText: string; remarks: string; date: string }>>('rc_opp_responses', {
     'opp-2': { proposalText: 'BuildCorp Metro Proposal v1', remarks: 'Our shoring and heavy rigs are ready to deploy in Bangalore Whitefield immediately.', date: '2026-07-16' }
   });
   const [reportedOppIds, setReportedOppIds] = useState<string[]>([]);
@@ -416,7 +419,7 @@ export default function BusinessOpportunitiesEngine({
       type: formType,
       category: formCategory,
       companyId: 'user-comp-9',
-      companyName: userSession?.email ? userSession.email.split('@')[0].toUpperCase() + ' Enterprises' : 'MultiSarv India Pvt. Ltd.',
+      companyName: currentOrgName(),
       companyLogoBg: 'bg-emerald-600',
       companyLogoText: userSession?.email ? userSession.email.substr(0, 2).toUpperCase() : 'MS',
       verified: true,
@@ -445,7 +448,7 @@ export default function BusinessOpportunitiesEngine({
     resetForm();
 
     try {
-      const savedLeads = localStorage.getItem('realtyconnect_leads');
+      const savedLeads = appStore.getItem('realtyconnect_leads');
       let currentLeads = [];
       if (savedLeads) {
         currentLeads = JSON.parse(savedLeads);
@@ -476,7 +479,7 @@ export default function BusinessOpportunitiesEngine({
         ],
         followUps: []
       };
-      localStorage.setItem('realtyconnect_leads', JSON.stringify([newLead, ...currentLeads]));
+      appStore.setItem('realtyconnect_leads', JSON.stringify([newLead, ...currentLeads]));
     } catch (e) {
       console.error('Error auto capturing lead from opportunity publish', e);
     }
@@ -543,7 +546,7 @@ export default function BusinessOpportunitiesEngine({
     setRespSubmitProposalPlaceholder('');
 
     try {
-      const savedLeads = localStorage.getItem('realtyconnect_leads');
+      const savedLeads = appStore.getItem('realtyconnect_leads');
       let currentLeads = [];
       if (savedLeads) {
         currentLeads = JSON.parse(savedLeads);
@@ -574,7 +577,7 @@ export default function BusinessOpportunitiesEngine({
         ],
         followUps: []
       };
-      localStorage.setItem('realtyconnect_leads', JSON.stringify([newLead, ...currentLeads]));
+      appStore.setItem('realtyconnect_leads', JSON.stringify([newLead, ...currentLeads]));
     } catch (e) {
       console.error('Error auto capturing lead from opportunity response', e);
     }
@@ -1072,12 +1075,12 @@ export default function BusinessOpportunitiesEngine({
                           {opp.verified && (
                             <span className="inline-flex items-center gap-0.5 text-[9px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1 py-0.1 rounded font-bold uppercase">
                               <CheckCircle2 className="w-2.5 h-2.5" />
-                              VERIFIED
+                              Verified
                             </span>
                           )}
                           {opp.premium && (
                             <span className="inline-flex items-center gap-0.5 text-[9px] font-mono bg-purple-500/10 text-purple-400 border border-purple-500/20 px-1 py-0.1 rounded font-bold uppercase">
-                              PREMIUM
+                              Premium
                             </span>
                           )}
                         </div>
@@ -1150,7 +1153,7 @@ export default function BusinessOpportunitiesEngine({
                       {hasResponded && (
                         <span className="text-emerald-400 flex items-center gap-1 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/15 font-bold">
                           <Check className="w-3 h-3" />
-                          PROPOSAL FILED
+                          Proposal Filed
                         </span>
                       )}
                     </div>

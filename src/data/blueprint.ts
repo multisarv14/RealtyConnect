@@ -266,65 +266,7 @@ export const API_LIST = `
     \`\`\`
 `;
 
-export const STAKEHOLDER_ROLES: { [key: string]: string[] } = {
-  BUILDER: [
-    'CREATE_PROJECT',
-    'VIEW_VENDORS',
-    'CREATE_RFQ',
-    'VIEW_PROPOSALS',
-    'VIEW_CONTRACTS',
-    'COMMUNICATE_B2B',
-  ],
-  DEVELOPER: [
-    'CREATE_PROJECT',
-    'VIEW_VENDORS',
-    'CREATE_RFQ',
-    'VIEW_PROPOSALS',
-    'MANAGE_BILLING',
-    'COMMUNICATE_B2B',
-  ],
-  CONSTRUCTION_CO: [
-    'MANAGE_PROJECT_ERP',
-    'VIEW_INVENTORY',
-    'CREATE_RFQ',
-    'SUBMIT_PROPOSAL',
-    'COMMUNICATE_B2B',
-  ],
-  CONTRACTOR: [
-    'MANAGE_LABOUR',
-    'SUBMIT_PROPOSAL',
-    'CREATE_RFQ',
-    'VIEW_PROJECTS',
-    'COMMUNICATE_B2B',
-  ],
-  MATERIAL_SUPPLIER: [
-    'MANAGE_PRODUCTS',
-    'VIEW_RFQS',
-    'SUBMIT_PROPOSAL',
-    'MANAGE_INVENTORY',
-    'COMMUNICATE_B2B',
-  ],
-  ARCHITECT: [
-    'MANAGE_PORTFOLIO',
-    'VIEW_RFQS',
-    'SUBMIT_PROPOSAL',
-    'UPLOAD_BLUEPRINTS',
-    'COMMUNICATE_B2B',
-  ],
-  COMPLIANCE_AUDITOR: [
-    'VIEW_AUDIT_LOGS',
-    'GENERATE_REPORTS',
-    'VERIFY_PROFILES',
-    'VIEW_ALL_FILES',
-  ],
-  ADMIN: [
-    'MANAGE_USERS',
-    'MANAGE_ROLES',
-    'MANAGE_SYSTEM_CONFIGS',
-    'MANAGE_COMMON_MASTERS',
-    'VIEW_AUDIT_LOGS',
-  ],
-};
+export { STAKEHOLDER_ROLES } from '../../shared/roles';
 
 export const DEVELOPMENT_TASKS: DevTask[] = [
   {

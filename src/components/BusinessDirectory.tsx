@@ -85,7 +85,9 @@ export interface Company {
   connectionsCount: number;
   recentlyJoined: boolean;
   trending: boolean;
-  distanceKm: number; // Simulated distance for Nearby Businesses
+  distanceKm: number | null; // Sample companies carry a made-up distance; registered ones have none
+  registered?: boolean; // true for companies registered on the platform (as opposed to bundled samples)
+  reviewCount?: number;
 
   // Products & Services
   products: string[];
@@ -935,6 +937,9 @@ const SEED_COMPANIES: Company[] = [
 ];
 
 export function augmentCompany(comp: Company) {
+  // Registered companies show only what they entered themselves; nothing is invented for them.
+  if (comp.registered) return comp;
+
   const gradients = [
     'from-indigo-950 via-slate-900 to-slate-950',
     'from-emerald-950 via-slate-900 to-slate-950',
@@ -1017,6 +1022,9 @@ interface BusinessDirectoryProps {
   onToggleFavorite: (id: string, name: string) => void;
   onConnectRequest: (id: string, name: string) => void;
   onViewBusinessProfile: (id: string) => void;
+  // Companies registered on the platform, and whether the bundled sample companies are shown beside them.
+  registeredCompanies: Company[];
+  showSampleCompanies: boolean;
   
   // Outer search syncing
   outerSearchTerm?: string;
@@ -1034,10 +1042,17 @@ export default function BusinessDirectory({
   onToggleFavorite,
   onConnectRequest,
   onViewBusinessProfile,
+  registeredCompanies,
+  showSampleCompanies,
   outerSearchTerm,
   outerCategory,
   outerLocation
 }: BusinessDirectoryProps) {
+
+  const allCompanies = useMemo(
+    () => [...registeredCompanies, ...(showSampleCompanies ? SEED_COMPANIES : [])],
+    [registeredCompanies, showSampleCompanies]
+  );
 
   // Advanced Search States
   const [searchName, setSearchName] = useState('');
@@ -1072,16 +1087,16 @@ export default function BusinessDirectory({
 
   // Category Metadata with icons & description for the Popular Categories experience
   const categoryMetadata = useMemo(() => [
-    { name: 'Builders', icon: Landmark, count: SEED_COMPANIES.filter(c => c.category === 'Builders').length, desc: 'Civil construction, superstructures, and smart building envelopes.', brands: 'L&T, Shapoorji, Tata' },
-    { name: 'Developers', icon: Building2, count: SEED_COMPANIES.filter(c => c.category === 'Developers').length, desc: 'Sustainable luxurious skyscrapers, IT parks, and integrated townships.', brands: 'Apex, Lodha, DLF, Godrej' },
-    { name: 'Contractors', icon: HardHat, count: SEED_COMPANIES.filter(c => c.category === 'Contractors').length, desc: 'Civil engineering, pilling infrastructure, metro transit grids.', brands: 'BuildCorp, NCC, Afcons' },
-    { name: 'Material Vendors', icon: Package, count: SEED_COMPANIES.filter(c => c.category === 'Material Vendors').length, desc: 'Ready-mix concrete, reinforcing high-ductility TMT bars, blocks.', brands: 'Ultratech, Tata Steel, JSW' },
-    { name: 'Banks', icon: Landmark, count: SEED_COMPANIES.filter(c => c.category === 'Banks').length, desc: 'Developer project financing, escrow and wholesale mortgage bank.', brands: 'SBI, HDFC, National Trust' },
-    { name: 'Consultants', icon: FileText, count: SEED_COMPANIES.filter(c => c.category === 'Consultants').length, desc: 'Structural wind-tunnel analysis, RERA legal compliance, interior design.', brands: 'Nexus, Aura, TaxShield' },
-    { name: 'DSA', icon: Users, count: SEED_COMPANIES.filter(c => c.category === 'DSA').length, desc: 'Authorized direct sales channel retail home loan approvals.', brands: 'ExpressMortgage, LoanLink' },
-    { name: 'Recruitment', icon: Users, count: SEED_COMPANIES.filter(c => c.category === 'Recruitment').length, desc: 'Niche civil engineering, project management, liaison sourcing.', brands: 'Apex Recruiters, HR Pro' },
-    { name: 'Equipment', icon: Truck, count: SEED_COMPANIES.filter(c => c.category === 'Equipment').length, desc: 'Heavy duty tower crane leases, batching plants, crawler excavators.', brands: 'Liebherr, Caterpillar, Schwing' },
-    { name: 'Transport', icon: Compass, count: SEED_COMPANIES.filter(c => c.category === 'Transport').length, desc: 'Raw material haulage logistics and 3PL aggregate dry mortar transit.', brands: 'Green Brick, LoadExpress' }
+    { name: 'Builders', icon: Landmark, count: allCompanies.filter(c => c.category === 'Builders').length, desc: 'Civil construction, superstructures, and smart building envelopes.', brands: 'L&T, Shapoorji, Tata' },
+    { name: 'Developers', icon: Building2, count: allCompanies.filter(c => c.category === 'Developers').length, desc: 'Sustainable luxurious skyscrapers, IT parks, and integrated townships.', brands: 'Apex, Lodha, DLF, Godrej' },
+    { name: 'Contractors', icon: HardHat, count: allCompanies.filter(c => c.category === 'Contractors').length, desc: 'Civil engineering, pilling infrastructure, metro transit grids.', brands: 'BuildCorp, NCC, Afcons' },
+    { name: 'Material Vendors', icon: Package, count: allCompanies.filter(c => c.category === 'Material Vendors').length, desc: 'Ready-mix concrete, reinforcing high-ductility TMT bars, blocks.', brands: 'Ultratech, Tata Steel, JSW' },
+    { name: 'Banks', icon: Landmark, count: allCompanies.filter(c => c.category === 'Banks').length, desc: 'Developer project financing, escrow and wholesale mortgage bank.', brands: 'SBI, HDFC, National Trust' },
+    { name: 'Consultants', icon: FileText, count: allCompanies.filter(c => c.category === 'Consultants').length, desc: 'Structural wind-tunnel analysis, RERA legal compliance, interior design.', brands: 'Nexus, Aura, TaxShield' },
+    { name: 'DSA', icon: Users, count: allCompanies.filter(c => c.category === 'DSA').length, desc: 'Authorized direct sales channel retail home loan approvals.', brands: 'ExpressMortgage, LoanLink' },
+    { name: 'Recruitment', icon: Users, count: allCompanies.filter(c => c.category === 'Recruitment').length, desc: 'Niche civil engineering, project management, liaison sourcing.', brands: 'Apex Recruiters, HR Pro' },
+    { name: 'Equipment', icon: Truck, count: allCompanies.filter(c => c.category === 'Equipment').length, desc: 'Heavy duty tower crane leases, batching plants, crawler excavators.', brands: 'Liebherr, Caterpillar, Schwing' },
+    { name: 'Transport', icon: Compass, count: allCompanies.filter(c => c.category === 'Transport').length, desc: 'Raw material haulage logistics and 3PL aggregate dry mortar transit.', brands: 'Green Brick, LoadExpress' }
   ], []);
 
   // Outer search syncing effects
@@ -1196,20 +1211,20 @@ export default function BusinessDirectory({
 
   // Compute states, cities, types from database for filters dropdown
   const uniqueStates = useMemo(() => {
-    return Array.from(new Set(SEED_COMPANIES.map(c => c.state)));
-  }, []);
+    return Array.from(new Set(allCompanies.map(c => c.state)));
+  }, [allCompanies]);
 
   const uniqueCities = useMemo(() => {
-    return Array.from(new Set(SEED_COMPANIES.map(c => c.city)));
-  }, []);
+    return Array.from(new Set(allCompanies.map(c => c.city)));
+  }, [allCompanies]);
 
   const uniqueBusinessTypes = useMemo(() => {
-    return Array.from(new Set(SEED_COMPANIES.map(c => c.businessType)));
-  }, []);
+    return Array.from(new Set(allCompanies.map(c => c.businessType)));
+  }, [allCompanies]);
 
   // Main filter function
   const filteredCompanies = useMemo(() => {
-    return SEED_COMPANIES.filter(comp => {
+    return allCompanies.filter(comp => {
       // 1. Text Search matching multi-fields
       if (searchName && !comp.name.toLowerCase().includes(searchName.toLowerCase())) return false;
       if (searchProduct && !comp.products.some(p => p.toLowerCase().includes(searchProduct.toLowerCase()))) return false;
@@ -1270,7 +1285,7 @@ export default function BusinessDirectory({
         if (activeSection === 'Most Connected' && comp.connectionsCount < 30) return false;
         if (activeSection === 'Premium' && !comp.premiumMember) return false;
         if (activeSection === 'Trending' && !comp.trending) return false;
-        if (activeSection === 'Nearby' && comp.distanceKm > 5.0) return false; // Simulated 5km boundary
+        if (activeSection === 'Nearby' && (comp.distanceKm == null || comp.distanceKm > 5.0)) return false; // Simulated 5km boundary
       }
 
       // 9. Availability Filter
@@ -1284,6 +1299,7 @@ export default function BusinessDirectory({
       return true;
     });
   }, [
+    allCompanies,
     searchName, searchProduct, searchService, searchBrand, searchCategory, searchCity, searchState, searchArea, searchPincode, searchKeywords,
     selectedBusinessType, selectedCountry, filterState, filterCity, filterArea, filterPincode,
     filterVerified, filterGst, filterRera, filterPremium, filterFeatured,
@@ -1345,8 +1361,8 @@ export default function BusinessDirectory({
   };
 
   const comparedCompanies = useMemo(() => {
-    return SEED_COMPANIES.filter(c => compareList.includes(c.id));
-  }, [compareList]);
+    return allCompanies.filter(c => compareList.includes(c.id));
+  }, [compareList, allCompanies]);
 
   // Track profile views for "Recently Viewed"
   const handleViewProfile = (comp: Company) => {
@@ -1391,16 +1407,16 @@ export default function BusinessDirectory({
         
         <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2.5 text-center animate-fade-in" id="category-listing-grid">
           {[
-            { name: 'All', code: 'ALL', count: SEED_COMPANIES.length, icon: Layers },
-            { name: 'Builders', code: 'BLD', count: SEED_COMPANIES.filter(c => c.category === 'Builders').length, icon: Landmark },
-            { name: 'Developers', code: 'DEV', count: SEED_COMPANIES.filter(c => c.category === 'Developers').length, icon: Building2 },
-            { name: 'Contractors', code: 'CON', count: SEED_COMPANIES.filter(c => c.category === 'Contractors').length, icon: HardHat },
-            { name: 'Material Vendors', code: 'VND', count: SEED_COMPANIES.filter(c => c.category === 'Material Vendors').length, icon: Package },
-            { name: 'Banks', code: 'BNK', count: SEED_COMPANIES.filter(c => c.category === 'Banks').length, icon: Landmark },
-            { name: 'Consultants', code: 'CNS', count: SEED_COMPANIES.filter(c => c.category === 'Consultants').length, icon: FileText },
-            { name: 'DSA', code: 'DSA', count: SEED_COMPANIES.filter(c => c.category === 'DSA').length, icon: Users },
-            { name: 'Recruitment', code: 'REC', count: SEED_COMPANIES.filter(c => c.category === 'Recruitment').length, icon: Users },
-            { name: 'Equipment', code: 'EQP', count: SEED_COMPANIES.filter(c => c.category === 'Equipment').length, icon: Truck }
+            { name: 'All', code: 'ALL', count: allCompanies.length, icon: Layers },
+            { name: 'Builders', code: 'BLD', count: allCompanies.filter(c => c.category === 'Builders').length, icon: Landmark },
+            { name: 'Developers', code: 'DEV', count: allCompanies.filter(c => c.category === 'Developers').length, icon: Building2 },
+            { name: 'Contractors', code: 'CON', count: allCompanies.filter(c => c.category === 'Contractors').length, icon: HardHat },
+            { name: 'Material Vendors', code: 'VND', count: allCompanies.filter(c => c.category === 'Material Vendors').length, icon: Package },
+            { name: 'Banks', code: 'BNK', count: allCompanies.filter(c => c.category === 'Banks').length, icon: Landmark },
+            { name: 'Consultants', code: 'CNS', count: allCompanies.filter(c => c.category === 'Consultants').length, icon: FileText },
+            { name: 'DSA', code: 'DSA', count: allCompanies.filter(c => c.category === 'DSA').length, icon: Users },
+            { name: 'Recruitment', code: 'REC', count: allCompanies.filter(c => c.category === 'Recruitment').length, icon: Users },
+            { name: 'Equipment', code: 'EQP', count: allCompanies.filter(c => c.category === 'Equipment').length, icon: Truck }
           ].map(cat => {
             const active = activeCategoryFilter === cat.name;
             const IconComponent = cat.icon;
@@ -1441,7 +1457,7 @@ export default function BusinessDirectory({
                     <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[10px] font-mono tracking-wider uppercase font-bold flex items-center gap-1">
                       <Sparkles className="w-3 h-3 text-emerald-400" /> Curated Category Channel
                     </span>
-                    <span className="text-[10px] text-slate-500 font-mono">• {SEED_COMPANIES.filter(c => c.category === activeCategoryFilter && c.verified).length} Verified Operators</span>
+                    <span className="text-[10px] text-slate-500 font-mono">• {allCompanies.filter(c => c.category === activeCategoryFilter && c.verified).length} Verified Operators</span>
                   </div>
                   <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2 font-display">
                     {activeCategoryFilter} Portal
@@ -1558,7 +1574,7 @@ export default function BusinessDirectory({
                   <div>
                     <span className="block text-[8px] font-mono text-slate-500 uppercase tracking-wider mb-1.5 font-bold">Suggested Companies</span>
                     <div className="space-y-1">
-                      {SEED_COMPANIES.filter(c => c.name.toLowerCase().includes(searchName.toLowerCase())).slice(0, 4).map(c => (
+                      {allCompanies.filter(c => c.name.toLowerCase().includes(searchName.toLowerCase())).slice(0, 4).map(c => (
                         <button
                           key={c.id}
                           type="button"
@@ -2172,7 +2188,7 @@ export default function BusinessDirectory({
                         </span>
                         <span className="text-slate-600 font-mono">•</span>
                         <span className="text-amber-400 flex items-center gap-0.5 font-mono">
-                          ★ {comp.rating}
+                          ★ {comp.rating || 'New'}
                         </span>
                       </div>
                     </div>

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   UploadCloud, 
   File, 
@@ -11,27 +11,45 @@ import {
   AlertTriangle, 
   Loader2, 
   Trash2, 
+  Download,
   ShieldCheck, 
   ShieldAlert,
   Info 
 } from 'lucide-react';
 import { UploadedFile } from '../types';
+import { api, apiFetch, ApiError, errorMessage } from '../lib/api';
 
 interface FileUploaderProps {
   onLogTriggered: (action: string, entity: string, entityId: string, status: 'SUCCESS' | 'FAILURE' | 'WARNING', details: string) => void;
   onNotificationTriggered: (type: 'email' | 'sms' | 'push' | 'in_app', content: string) => void;
+  userSession: { id: string } | null;
   maxSizeMb: number;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export default function FileUploader({ onLogTriggered, onNotificationTriggered, maxSizeMb, showToast }: FileUploaderProps) {
-  const [files, setFiles] = useState<UploadedFile[]>([
-    { id: 'f1', name: 'architect_layout_rev3.pdf', size: 4500000, type: 'application/pdf', status: 'success', url: '#', uploadedAt: '2026-07-16 07:12', md5: '3c1e309cbdf71d3462987a409852be27' },
-    { id: 'f2', name: 'site_survey_north.png', size: 1800000, type: 'image/png', status: 'success', url: '#', uploadedAt: '2026-07-16 07:15', md5: '9a318dfb71b3422987a409852ce2b005' }
-  ]);
+export default function FileUploader({ onLogTriggered, onNotificationTriggered, userSession, maxSizeMb, showToast }: FileUploaderProps) {
+  const [files, setFiles] = useState<UploadedFile[]>([]);
   const [dragActive, setDragActive] = useState(false);
-  const [scanningId, setScanningId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadFiles = useCallback(() => {
+    api<UploadedFile[]>('GET', '/files')
+      .then(setFiles)
+      .catch(err => showToast(errorMessage(err), 'error'));
+  }, [showToast]);
+
+  useEffect(() => {
+    if (userSession) loadFiles();
+    else setFiles([]);
+  }, [userSession?.id, loadFiles]);
+
+  // Files leave quarantine on the server; keep asking while any is still being scanned.
+  const hasScanning = files.some(f => f.status === 'scanning');
+  useEffect(() => {
+    if (!hasScanning) return;
+    const timer = setInterval(loadFiles, 1500);
+    return () => clearInterval(timer);
+  }, [hasScanning, loadFiles]);
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -41,8 +59,22 @@ export default function FileUploader({ onLogTriggered, onNotificationTriggered, 
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const processFile = (file: File) => {
-    // 1. Validation - File Extension
+  const uploadToServer = async (content: Blob, name: string): Promise<UploadedFile> => {
+    const form = new FormData();
+    form.append('file', content, name);
+    const res = await apiFetch('/files', { method: 'POST', body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, data?.error || 'Upload failed.', data);
+    return data as UploadedFile;
+  };
+
+  const processFile = async (file: File) => {
+    if (!userSession) {
+      showToast('Sign in to upload documents.', 'info');
+      return;
+    }
+
+    // 1. Validation - File Extension (the server re-checks the actual file content)
     const allowedExtensions = ['pdf', 'png', 'jpg', 'jpeg'];
     const extension = file.name.split('.').pop()?.toLowerCase() || '';
     
@@ -72,46 +104,14 @@ export default function FileUploader({ onLogTriggered, onNotificationTriggered, 
       return;
     }
 
-    // 3. Initiate Upload & Sandbox scanning
-    const fileId = Math.random().toString(36).substr(2, 9);
-    const newFile: UploadedFile = {
-      id: fileId,
-      name: file.name,
-      size: file.size,
-      type: file.type || 'unknown/binary',
-      status: 'scanning',
-      url: '#',
-      uploadedAt: new Date().toISOString().replace('T', ' ').substr(0, 16),
-      md5: Math.random().toString(16).substr(2, 32)
-    };
-
-    setFiles(prev => [newFile, ...prev]);
-    onLogTriggered(
-      'FILE_UPLOAD_INITIATED',
-      'uploaded_files',
-      fileId,
-      'WARNING',
-      `Registry entry created in SCANNING quarantine block for "${file.name}" [ID: ${fileId}]. Initiating malware scan hooks.`
-    );
-    onNotificationTriggered('in_app', `File "${file.name}" uploaded. Initiating sandbox security scan...`);
-
-    // Simulate malware/antivirus analysis
-    setTimeout(() => {
-      setFiles(prev => prev.map(f => {
-        if (f.id === fileId) {
-          onLogTriggered(
-            'FILE_SCAN_CLEAN_APPROVED',
-            'uploaded_files',
-            fileId,
-            'SUCCESS',
-            `Quarantine scan passed. SHA-256 integrity verified for file "${f.name}". Download unlocked.`
-          );
-          onNotificationTriggered('in_app', `Malware scan complete. "${f.name}" has been approved and saved securely.`);
-          return { ...f, status: 'success' };
-        }
-        return f;
-      }));
-    }, 2500);
+    // 3. Upload into quarantine
+    try {
+      const uploaded = await uploadToServer(file, file.name);
+      setFiles(prev => [uploaded, ...prev]);
+      onNotificationTriggered('in_app', `File "${file.name}" uploaded. It is held in quarantine until the scan completes.`);
+    } catch (err) {
+      showToast(`Upload failed: ${errorMessage(err)}`, 'error');
+    }
   };
 
   // Drag handlers
@@ -131,67 +131,52 @@ export default function FileUploader({ onLogTriggered, onNotificationTriggered, 
     setDragActive(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
+      void processFile(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
+      void processFile(e.target.files[0]);
+    }
+    e.target.value = '';
+  };
+
+  // Sends an executable straight to the API, skipping the browser-side checks above,
+  // to prove the server's own gate (Rule FILE-01) holds.
+  const sendDisguisedExecutable = async () => {
+    if (!userSession) {
+      showToast('Sign in to run the server-side rejection test.', 'info');
+      return;
+    }
+    const payload = new Blob([new Uint8Array([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00])], { type: 'application/x-msdownload' });
+    try {
+      await uploadToServer(payload, 'critical_exploit_payload.exe');
+      loadFiles();
+      showToast('Unexpected: the server accepted an executable payload. Review the upload gate.', 'error');
+    } catch (err) {
+      showToast(`Server gate held: ${errorMessage(err)}`, 'success');
     }
   };
 
-  const triggerMaliciousUploadSim = () => {
-    // Instantly simulate a payload threat
-    const fileId = Math.random().toString(36).substr(2, 9);
-    const mockMalicious: UploadedFile = {
-      id: fileId,
-      name: 'critical_exploit_payload.exe',
-      size: 1450000,
-      type: 'application/x-msdownload',
-      status: 'scanning',
-      url: '#',
-      uploadedAt: new Date().toISOString().replace('T', ' ').substr(0, 16),
-      md5: '7ca31e309cbdf71d3462987a409852be2d'
-    };
-
-    setFiles(prev => [mockMalicious, ...prev]);
-    onLogTriggered(
-      'SECURITY_MALICIOUS_FILE_QUARANTINED',
-      'uploaded_files',
-      fileId,
-      'WARNING',
-      `CRITICAL ALERT: File "critical_exploit_payload.exe" uploaded. Registry status set to SCANNING quarantine block.`
-    );
-    onNotificationTriggered('push', `CRITICAL: Quarantine scanner identified a structural threat in "critical_exploit_payload.exe"!`);
-
-    setTimeout(() => {
-      setFiles(prev => prev.map(f => {
-        if (f.id === fileId) {
-          onLogTriggered(
-            'SECURITY_AV_SCAN_FAILED_ALERT',
-            'uploaded_files',
-            fileId,
-            'FAILURE',
-            `MALWARE THREAT DETECTED: ClamAV identified Win.Trojan.Generic inside "critical_exploit_payload.exe". File quarantine locked and admin notified.`
-          );
-          onNotificationTriggered('email', `Platform Security alert dispatched to Administrator: Malware quarantined.`);
-          return { ...f, status: 'failed' };
-        }
-        return f;
-      }));
-    }, 2500);
+  const handleDownloadFile = async (file: UploadedFile) => {
+    const res = await apiFetch(`/files/${encodeURIComponent(file.id)}/download`).catch(() => null);
+    if (!res || !res.ok) {
+      showToast('Download failed. The file may still be in quarantine.', 'error');
+      return;
+    }
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.name;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
-  const handleDeleteFile = (id: string, name: string) => {
-    setFiles(prev => prev.filter(f => f.id !== id));
-    onLogTriggered(
-      'FILE_REGISTRY_RECORD_REMOVED',
-      'uploaded_files',
-      id,
-      'SUCCESS',
-      `Audit Trigger: Removed file registry pointer and associated block storage for "${name}" [ID: ${id}].`
-    );
+  const handleDeleteFile = (id: string) => {
+    api('DELETE', `/files/${encodeURIComponent(id)}`)
+      .then(() => setFiles(prev => prev.filter(f => f.id !== id)))
+      .catch(err => showToast(errorMessage(err), 'error'));
   };
 
   return (
@@ -244,14 +229,14 @@ export default function FileUploader({ onLogTriggered, onNotificationTriggered, 
             Security Intrusion Testbed
           </h4>
           <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
-            Simulate a malicious Trojan attempt to check how quarantine sandboxes flag and lock payloads automatically.
+            Send an executable past the browser-side checks to confirm the server rejects it on its own.
           </p>
           <button
-            onClick={triggerMaliciousUploadSim}
+            onClick={sendDisguisedExecutable}
             id="btn-simulate-malware"
             className="w-full bg-red-950/40 hover:bg-red-900/40 border border-red-500/30 hover:border-red-500/60 text-red-400 font-mono font-bold py-1.5 px-3 rounded text-xs transition-all flex items-center justify-center gap-1.5"
           >
-            Inject Malicious EXE Simulation
+            Send Disguised EXE to Server
           </button>
         </div>
       </div>
@@ -268,7 +253,7 @@ export default function FileUploader({ onLogTriggered, onNotificationTriggered, 
           <div className="space-y-2 mt-4 max-h-[195px] overflow-y-auto pr-1">
             {files.length === 0 ? (
               <div className="py-10 text-center text-slate-550 text-xs font-mono">
-                No documents are registered in active memory cache.
+                {userSession ? 'No documents uploaded yet.' : 'Sign in to upload and view documents.'}
               </div>
             ) : (
               files.map(file => {
@@ -310,16 +295,24 @@ export default function FileUploader({ onLogTriggered, onNotificationTriggered, 
                     <div className="flex items-center gap-2">
                       {isScanning && (
                         <span className="text-[10px] font-mono text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20 flex items-center gap-1">
-                          SCANNING
+                          Scanning
                         </span>
                       )}
                       {isSuccess && (
                         <>
                           <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
-                            SECURE
+                            Secure
                           </span>
                           <button
-                            onClick={() => handleDeleteFile(file.id, file.name)}
+                            onClick={() => handleDownloadFile(file)}
+                            id={`btn-download-file-${file.id}`}
+                            className="text-slate-600 hover:text-emerald-400 p-1 rounded hover:bg-slate-900 transition-colors"
+                            title="Download file"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteFile(file.id)}
                             id={`btn-delete-file-${file.id}`}
                             className="text-slate-600 hover:text-red-400 p-1 rounded hover:bg-slate-900 transition-colors"
                             title="Remove file"
@@ -330,7 +323,7 @@ export default function FileUploader({ onLogTriggered, onNotificationTriggered, 
                       )}
                       {isFailed && (
                         <span className="text-[10px] font-mono text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20 flex items-center gap-1 font-bold">
-                          THREAT QUARANTINED
+                          Threat Quarantined
                         </span>
                       )}
                     </div>
@@ -345,7 +338,7 @@ export default function FileUploader({ onLogTriggered, onNotificationTriggered, 
         <div className="mt-5 p-3.5 bg-slate-900/20 border border-slate-850 rounded-lg text-xs text-slate-400 flex items-start gap-2">
           <Info className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
           <span>
-            <strong>Quarantine Policy (Rule FILE-03) active:</strong> Files are blocked from access/download while scanning. Any flagged virus matches instantly isolate the file byte-blocks and fire platform security breach signals.
+            <strong>Quarantine Policy (Rule FILE-03):</strong> Files are blocked from download while in quarantine. The server verifies type and size; an antivirus engine is not connected yet, so files are released after a short hold.
           </span>
         </div>
       </div>
