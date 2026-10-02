@@ -21,10 +21,10 @@ export type StoreScope = 'public' | 'org' | 'user';
 
 export type StoreKeyDef =
   | { kind: 'list'; scope: 'public' | 'org'; collection: string }
-  | { kind: 'value'; scope: StoreScope };
+  | { kind: 'value'; scope: StoreScope; empty?: unknown };
 
 const list = (scope: 'public' | 'org', collection: string): StoreKeyDef => ({ kind: 'list', scope, collection });
-const value = (scope: StoreScope): StoreKeyDef => ({ kind: 'value', scope });
+const value = (scope: StoreScope, empty?: unknown): StoreKeyDef => ({ kind: 'value', scope, empty });
 
 export const STORE_KEYS: Record<string, StoreKeyDef> = {
   // Platform-wide B2B exchange
@@ -52,11 +52,11 @@ export const STORE_KEYS: Record<string, StoreKeyDef> = {
   rc_net_invitations: list('org', 'invitations'),
   rc_net_blocked: list('org', 'blocked_reports'),
   rc_net_timeline: list('org', 'network_timeline'),
-  rc_net_connections_sent: value('org'),
-  rc_net_following: value('org'),
-  rc_net_followers: value('org'),
-  rc_net_saved_businesses: value('org'),
-  rc_net_favorite_companies: value('org'),
+  rc_net_connections_sent: value('org', []),
+  rc_net_following: value('org', []),
+  rc_net_followers: value('org', []),
+  rc_net_saved_businesses: value('org', []),
+  rc_net_favorite_companies: value('org', []),
 
   // Projects & procurement
   realtyconnect_projects: list('org', 'projects'),
@@ -92,13 +92,8 @@ export const STORE_KEYS: Record<string, StoreKeyDef> = {
   rc_assets: list('org', 'assets'),
   rc_services: list('org', 'service_requests'),
   rc_contracts: list('org', 'amc_contracts'),
-  rc_custom_categories: value('org'),
+  rc_custom_categories: value('org', []),
 
-  // Security & compliance
-  rc_security_users: list('org', 'security_users'),
-  rc_security_roles: list('org', 'security_roles'),
-  rc_security_policies: list('org', 'compliance_policies'),
-  rc_security_data_changes: list('org', 'data_change_records'),
 
   // Subscription
   rc_subscription_state: value('org'),
@@ -108,21 +103,21 @@ export const STORE_KEYS: Record<string, StoreKeyDef> = {
   system_notifications: list('org', 'module_notifications'),
 
   // Personal workspace state
-  realtyconnect_saved_listings: value('user'),
-  realtyconnect_fav_listings: value('user'),
-  realtyconnect_saved_rfqs: value('user'),
-  rc_opp_saved_ids: value('user'),
-  rc_opp_responses: value('user'),
-  realtyconnect_dashboard_priorities: value('user'),
-  realtyconnect_dashboard_checklist: value('user'),
+  realtyconnect_saved_listings: value('user', []),
+  realtyconnect_fav_listings: value('user', []),
+  realtyconnect_saved_rfqs: value('user', []),
+  rc_opp_saved_ids: value('user', []),
+  rc_opp_responses: value('user', {}),
+  realtyconnect_dashboard_priorities: value('user', []),
+  realtyconnect_dashboard_checklist: value('user', []),
   realtyconnect_dashboard_widgets: value('user'),
-  realtyconnect_grouped_notifications: value('user'),
-  rc_global_notifications: value('user'),
-  rc_saved_dashboards: value('user'),
-  realtyconnect_pinned_modules: value('user'),
-  realtyconnect_favorite_modules: value('user'),
-  realtyconnect_recent_modules: value('user'),
-  realtyconnect_module_clicks: value('user'),
+  realtyconnect_grouped_notifications: value('user', []),
+  rc_global_notifications: value('user', []),
+  rc_saved_dashboards: value('user', []),
+  realtyconnect_pinned_modules: value('user', []),
+  realtyconnect_favorite_modules: value('user', []),
+  realtyconnect_recent_modules: value('user', []),
+  realtyconnect_module_clicks: value('user', {}),
 };
 
 export function isManagedKey(key: string): boolean {

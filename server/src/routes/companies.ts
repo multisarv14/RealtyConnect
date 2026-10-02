@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { DIRECTORY_CATEGORIES } from '../../../shared/roles';
-import { asyncHandler, HttpError, optionalAuth, requireAuth } from '../middleware/auth';
+import { asyncHandler, HttpError, optionalAuth, requireAuth, requireOrgRole } from '../middleware/auth';
 import { Organization, User } from '../models';
 import { auditRequest } from '../services/audit';
 
@@ -24,10 +24,6 @@ const profileSchema = z
     description: text(2000),
     yearEstablished: text(4).regex(/^(\d{4})?$/, 'must be a 4-digit year'),
     companyType: text(80),
-    registrationNumber: text(40),
-    gstin: text(20),
-    pan: text(15),
-    reraNumber: text(80),
     website,
     email: text(255),
     phone: text(30),
@@ -100,12 +96,12 @@ type OrgDoc = InstanceType<typeof Organization>;
 
 const LOGO_COLOURS = ['bg-indigo-600', 'bg-emerald-600', 'bg-amber-600', 'bg-purple-600', 'bg-blue-600', 'bg-rose-600', 'bg-cyan-600', 'bg-teal-600'];
 
-function logoColour(name: string) {
+export function logoColour(name: string) {
   const hash = [...name].reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
   return LOGO_COLOURS[hash % LOGO_COLOURS.length];
 }
 
-function initials(name: string) {
+export function initials(name: string) {
   const words = name.split(/\s+/).filter(Boolean);
   return ((words[0]?.[0] ?? '') + (words[1]?.[0] ?? words[0]?.[1] ?? '')).toUpperCase();
 }
@@ -178,7 +174,7 @@ function reviewsOf(org: OrgDoc, verifiedOrgIds: Set<string>) {
 }
 
 /** Directory card. Matches the `Company` shape of the React directory. */
-function toCard(org: OrgDoc) {
+export function toCard(org: OrgDoc) {
   const p = fullProfile(org);
   const established = parseInt(p.yearEstablished, 10);
   const contactPublic = p.contactVisibility === 'Public';
@@ -203,8 +199,8 @@ function toCard(org: OrgDoc) {
     area: '',
     pincode: '',
     verified: org.verified,
-    gstVerified: false,
-    reraVerified: false,
+    gstVerified: org.verified && !!p.gstin,
+    reraVerified: org.verified && !!p.reraNumber,
     premiumMember: false,
     featuredMember: false,
     views: 0,
@@ -282,7 +278,7 @@ companiesRouter.get(
 
 companiesRouter.put(
   '/me',
-  requireAuth,
+  ...requireOrgRole('ADMIN'),
   asyncHandler(async (req, res) => {
     const input = profileSchema.parse(req.body) as Record<string, any>;
     const org = await Organization.findById(req.auth!.orgId);
@@ -320,7 +316,7 @@ companiesRouter.get(
 
 companiesRouter.post(
   '/:id/reviews',
-  requireAuth,
+  ...requireOrgRole('MEMBER'),
   asyncHandler(async (req, res) => {
     const input = z.object({ rating: z.number().int().min(1).max(5), comment: text(2000).min(5) }).parse(req.body);
     if (req.params.id === req.auth!.orgId) throw new HttpError(403, 'A company cannot review itself.');

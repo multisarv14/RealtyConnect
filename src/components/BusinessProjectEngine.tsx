@@ -1,4 +1,6 @@
 import { appStore } from '../lib/appStore';
+import { errorMessage } from '../lib/api';
+import { formatBytes, openFile, uploadFile } from '../lib/files';
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Building2, Users, CheckCircle2, ArrowRight, MapPin, Mail, Phone, 
@@ -26,7 +28,7 @@ interface Project {
   progress: number;
   budget: number; // in Lakhs (INR)
   description: string;
-  documents: { id: string; name: string; size: string; type: string; date: string }[];
+  documents: { id: string; name: string; size: string; type: string; date: string; fileId?: string }[];
   tasks: {
     id: string;
     title: string;
@@ -628,16 +630,25 @@ export default function BusinessProjectEngine({
   };
 
   // File Upload Simulator
-  const handleFakeFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedProjectId || !e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
+    e.target.value = '';
 
+    let stored;
+    try {
+      stored = await uploadFile(file);
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
+      return;
+    }
     const docObj = {
       id: `doc-${Date.now()}`,
-      name: file.name,
-      size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-      type: file.name.split('.').pop()?.toUpperCase() || 'DOC',
-      date: new Date().toISOString().split('T')[0]
+      name: stored.name,
+      size: formatBytes(stored.size),
+      type: stored.name.split('.').pop()?.toUpperCase() || 'DOC',
+      date: new Date().toISOString().split('T')[0],
+      fileId: stored.id
     };
 
     const updated = projects.map(proj => {
@@ -1539,7 +1550,7 @@ export default function BusinessProjectEngine({
                       <div className="relative cursor-pointer">
                         <input
                           type="file"
-                          onChange={handleFakeFileUpload}
+                          onChange={handleFileUpload}
                           className="absolute inset-0 opacity-0 cursor-pointer w-full"
                           id="blueprint-upload"
                         />
@@ -1564,6 +1575,7 @@ export default function BusinessProjectEngine({
                             <div className="flex items-center gap-4 text-slate-400 font-mono text-[10px] shrink-0">
                               <span>{doc.size}</span>
                               <span>{doc.date}</span>
+                              {doc.fileId && <button type="button" onClick={() => openFile(doc.fileId!).then(ok => ok || showToast('The file could not be opened.', 'error'))} className="text-emerald-400 hover:underline">Open</button>}
                             </div>
                           </div>
                         ))

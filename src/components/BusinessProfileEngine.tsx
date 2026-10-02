@@ -15,6 +15,7 @@ import { emptyCompanyProfile, fetchCompanyProfile, isRegisteredCompanyId, postCo
 import { errorMessage } from '../lib/api';
 import { currentUserEmail, currentUserName } from '../lib/identity';
 import CompanyProfileForm from './CompanyProfileForm';
+import VerificationPanel from './VerificationPanel';
 
 interface BusinessProfileEngineProps {
   businessId: string;
@@ -33,6 +34,7 @@ interface BusinessProfileEngineProps {
   userRole?: string;
   // Organization of the signed-in user; a company's own profile is editable only by it.
   currentOrgId?: string | null;
+  userOrgRole?: string;
   // Called after the owner's changes were saved on the server.
   onProfileSaved?: () => void;
   connections?: any[];
@@ -40,7 +42,7 @@ interface BusinessProfileEngineProps {
   onToggleFollow?: (id: string, name: string) => void;
   onSendConnection?: (id: string, name: string, cat: string, loc: string, logo: string, purpose: string) => void;
   onWithdrawConnection?: (id: string) => void;
-  onSendEnquiry?: (id: string, name: string, sub: string, cat: string, msg: string, email: string, phone: string) => void;
+  onSendEnquiry?: (id: string, name: string, sub: string, cat: string, msg: string, email: string, phone: string) => void | Promise<boolean>;
   onScheduleMeeting?: (id: string, name: string, title: string, date: string, time: string, type: string) => void;
   onSendPartnership?: (id: string, name: string, type: 'partnership' | 'dealer' | 'distributor', terms: string, val: string, scope: string) => void;
 }
@@ -178,6 +180,7 @@ export default function BusinessProfileEngine({
   showToast,
   userRole,
   currentOrgId,
+  userOrgRole,
   onProfileSaved,
   connections,
   following,
@@ -599,6 +602,15 @@ export default function BusinessProfileEngine({
     if (!enquiry.message) return showToast('Please type your proposal requirements.', 'error');
     setIsSubmittingEnquiry(true);
 
+    if (isRegistered) {
+      // A real company: show what actually happened, not a scripted reply.
+      Promise.resolve(onSendEnquiry?.(profile.id, profile.name, enquiry.subject, enquiry.category, enquiry.message, enquiry.senderEmail, enquiry.senderPhone)).then(ok => {
+        setIsSubmittingEnquiry(false);
+        if (ok) setSimulatedReply(`Your enquiry was delivered to ${profile.name}. It appears in their Leads, and their reply will arrive in your Messaging inbox.`);
+      });
+      return;
+    }
+
     if (onSendEnquiry) {
       onSendEnquiry(profile.id, profile.name, enquiry.subject, enquiry.category, enquiry.message, enquiry.senderEmail, enquiry.senderPhone);
     } else {
@@ -879,20 +891,25 @@ export default function BusinessProfileEngine({
                       Core Values
                     </h3>
                     <div className="grid grid-cols-1 gap-3">
+                      {profile.vision && (
                       <div className="p-3 bg-slate-900/35 border border-slate-900 rounded-lg">
                         <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block mb-0.5 font-bold">Our Corporate Vision</span>
                         <p className="italic text-slate-300 font-sans">"{profile.vision}"</p>
                       </div>
+                      )}
+                      {profile.mission && (
                       <div className="p-3 bg-slate-900/35 border border-slate-900 rounded-lg">
                         <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block mb-0.5 font-bold">Our Mission Objective</span>
                         <p className="italic text-slate-300 font-sans">"{profile.mission}"</p>
                       </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 {/* Highlights and Strengths */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                  {b2bContent.highlights.length > 0 && (
                   <div className="p-4 bg-slate-900/30 border border-slate-900 rounded-xl space-y-3">
                     <h4 className="text-white font-bold font-mono text-[10px] uppercase tracking-wider text-emerald-400">Core Business Highlights</h4>
                     <ul className="space-y-2 text-slate-300 font-sans text-[11px]">
@@ -904,7 +921,9 @@ export default function BusinessProfileEngine({
                       ))}
                     </ul>
                   </div>
+                  )}
 
+                  {profile.coreStrengths.length > 0 && (
                   <div className="p-4 bg-slate-900/30 border border-slate-900 rounded-xl space-y-3">
                     <h4 className="text-white font-bold font-mono text-[10px] uppercase tracking-wider text-emerald-400">Key Strengths & Solutions</h4>
                     <ul className="space-y-2 text-slate-300 font-sans text-[11px]">
@@ -916,6 +935,7 @@ export default function BusinessProfileEngine({
                       ))}
                     </ul>
                   </div>
+                  )}
                 </div>
 
                 {/* Certifications registry block */}
@@ -1803,6 +1823,7 @@ export default function BusinessProfileEngine({
             {/* TAB: OWNER PORTAL */}
             {activeTab === 'settings' && isOwnerView && (
               <div className="space-y-6 animate-fade-in text-xs text-slate-300 text-left">
+                {isOwner && <VerificationPanel showToast={showToast} canEdit={userRole !== undefined && (userOrgRole === 'OWNER' || userOrgRole === 'ADMIN')} />}
                 {isOwner && (
                   <CompanyProfileForm
                     profile={profile as CompanyProfile}

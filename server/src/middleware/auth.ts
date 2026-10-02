@@ -8,6 +8,7 @@ export interface AuthContext {
   email: string;
   role: string;
   orgId: string;
+  orgRole: string;
 }
 
 declare global {
@@ -31,7 +32,7 @@ export const asyncHandler =
   };
 
 export function signAccessToken(ctx: AuthContext): string {
-  return jwt.sign({ email: ctx.email, role: ctx.role, org: ctx.orgId }, config.jwtAccessSecret, {
+  return jwt.sign({ email: ctx.email, role: ctx.role, org: ctx.orgId, orr: ctx.orgRole }, config.jwtAccessSecret, {
     subject: ctx.userId,
     expiresIn: config.accessTokenTtlSeconds,
   });
@@ -43,7 +44,7 @@ export const requireAuth: RequestHandler = (req, _res, next) => {
   if (!token) return next(new HttpError(401, 'Authentication required.'));
   try {
     const payload = jwt.verify(token, config.jwtAccessSecret) as jwt.JwtPayload;
-    req.auth = { userId: String(payload.sub), email: payload.email, role: payload.role, orgId: payload.org };
+    req.auth = { userId: String(payload.sub), email: payload.email, role: payload.role, orgId: payload.org, orgRole: payload.orr || 'OWNER' };
     next();
   } catch {
     next(new HttpError(401, 'Session expired or invalid.'));
@@ -56,7 +57,7 @@ export const optionalAuth: RequestHandler = (req, _res, next) => {
   if (!header.startsWith('Bearer ')) return next();
   try {
     const payload = jwt.verify(header.slice(7), config.jwtAccessSecret) as jwt.JwtPayload;
-    req.auth = { userId: String(payload.sub), email: payload.email, role: payload.role, orgId: payload.org };
+    req.auth = { userId: String(payload.sub), email: payload.email, role: payload.role, orgId: payload.org, orgRole: payload.orr || 'OWNER' };
     next();
   } catch {
     // Answer 401 rather than silently treating the caller as anonymous, so the client renews its token and retries.
@@ -85,6 +86,21 @@ export function invalidatePermissionCache() {
 export async function hasPermission(req: Request, permission: string): Promise<boolean> {
   if (!req.auth) return false;
   return (await permissionsFor(req.auth.role)).includes(permission);
+}
+
+const ORG_ROLE_RANK: Record<string, number> = { VIEWER: 0, MEMBER: 1, ADMIN: 2, OWNER: 3 };
+
+/** The signed-in person must hold at least this role inside their company. */
+export function requireOrgRole(minimum: 'MEMBER' | 'ADMIN' | 'OWNER'): RequestHandler[] {
+  return [
+    requireAuth,
+    (req, _res, next) => {
+      if ((ORG_ROLE_RANK[req.auth!.orgRole] ?? 0) < ORG_ROLE_RANK[minimum]) {
+        return next(new HttpError(403, minimum === 'MEMBER' ? 'View-only accounts cannot make changes.' : `Only a company ${minimum.toLowerCase()} can do this.`));
+      }
+      next();
+    },
+  ];
 }
 
 /** Rule AUTH-05: nothing is allowed unless the active role grants it. */

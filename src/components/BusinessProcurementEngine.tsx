@@ -1,5 +1,6 @@
 import { currentUserName } from '../lib/identity';
 import { appStore } from '../lib/appStore';
+import { downloadCsv } from '../lib/exportFile';
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Building2, Users, CheckCircle2, ArrowRight, MapPin, Mail, Phone, 
@@ -1016,7 +1017,7 @@ export default function BusinessProcurementEngine({
                 <button
                   onClick={() => {
                     setActiveTab('requests');
-                    onLogTriggered('PROCUREMENT_INTEGRATION_AUDIT', 'procurement', 'escrow', 'SUCCESS', 'Procurement Dashboard: Exported sourcing ledger logs.');
+                    onLogTriggered('PROCUREMENT_INTEGRATION_AUDIT', 'procurement', 'escrow', 'SUCCESS', 'Procurement Dashboard: opened the request ledger.');
                   }}
                   className="text-[9px] font-mono font-bold text-emerald-400 hover:underline flex items-center gap-0.5 uppercase cursor-pointer"
                 >

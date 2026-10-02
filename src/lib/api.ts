@@ -19,6 +19,10 @@ export interface Session {
   organizationName: string;
   subscriptionPlan: string;
   reraRegistration: string;
+  verified: boolean;
+  category: string;
+  orgRole: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+  plan: { id: string; name: string; features: string[]; limits: { users: number; storageMb: number; listings: number; rfqsPerMonth: number } };
 }
 
 export interface DemoAccount {
@@ -41,8 +45,10 @@ export interface AuthMeta {
 export interface RegisterInput {
   email: string;
   password: string;
-  organizationName: string;
-  role: string;
+  organizationName?: string;
+  role?: string;
+  // Joins the inviting company instead of creating a new one.
+  inviteCode?: string;
   name?: string;
   city?: string;
   reraRegistration?: string;

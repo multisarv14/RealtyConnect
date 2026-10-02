@@ -3,6 +3,7 @@
  * A premium professional B2B update aggregator and publishing engine.
  */
 
+import { currentOrgCategory, currentOrgId, currentOrgName, currentOrgVerified } from '../lib/identity';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ThumbsUp, 
@@ -709,7 +710,7 @@ export default function BusinessFeed({
   const [newPostDocSize, setNewPostDocSize] = useState<string>('3.2 MB');
   const [newPostImgStyle, setNewPostImgStyle] = useState<string>('gradient-1');
   const [newPostVis, setNewPostVis] = useState<'Public Network' | 'Connections Only'>('Public Network');
-  const [selectedPublisherId, setSelectedPublisherId] = useState<string>('ent-1');
+  const [selectedPublisherId, setSelectedPublisherId] = useState<string>(currentOrgId() || 'guest');
 
   // Draft Save State
   const [hasSavedDraft, setHasSavedDraft] = useState<boolean>(false);
@@ -722,19 +723,13 @@ export default function BusinessFeed({
   const [reportReason, setReportReason] = useState<string>('Irrelevant/Non-business content');
   const [reportText, setReportText] = useState<string>('');
 
-  // 10 Verified companies list
-  const PUBLISHER_COMPANIES = useMemo(() => [
-    { id: 'ent-1', name: 'Apex Developers Ltd', category: 'Developers', logoBg: 'bg-indigo-600', logoText: 'AD' },
-    { id: 'ent-2', name: 'BuildCorp Construction', category: 'Contractors', logoBg: 'bg-emerald-600', logoText: 'BC' },
-    { id: 'ent-3', name: 'Elite Materials Group', category: 'Material Vendors', logoBg: 'bg-amber-600', logoText: 'EM' },
-    { id: 'ent-4', name: 'RealtyConnect Pro Consultants', category: 'Consultants', logoBg: 'bg-purple-600', logoText: 'RC' },
-    { id: 'ent-5', name: 'National Trust Bank', category: 'Banks', logoBg: 'bg-blue-600', logoText: 'NT' },
-    { id: 'ent-7', name: 'Global Tech Equipment Ltd', category: 'Equipment', logoBg: 'bg-cyan-600', logoText: 'GT' },
-    { id: 'ent-8', name: 'Green Brick Logistics', category: 'Transport', logoBg: 'bg-emerald-700', logoText: 'GB' },
-    { id: 'ent-12', name: 'TaxShield & Associates', category: 'Consultants', logoBg: 'bg-slate-600', logoText: 'TS' },
-    { id: 'ent-22', name: 'PropTech Systems', category: 'Consultants', logoBg: 'bg-indigo-800', logoText: 'PT' },
-    { id: 'ent-25', name: 'Zenith Safety Audits', category: 'Consultants', logoBg: 'bg-amber-800', logoText: 'ZS' }
-  ], []);
+  // Posts are always published as the signed-in company (in demo mode the sample company list is also offered).
+  const PUBLISHER_COMPANIES = useMemo(() => {
+    const own = currentOrgId()
+      ? [{ id: currentOrgId() as string, name: currentOrgName(), category: currentOrgCategory() || 'Consultants', logoBg: 'bg-emerald-600', logoText: currentOrgName().substring(0, 2).toUpperCase() }]
+      : [];
+    return own.length ? own : [{ id: 'guest', name: 'Guest', category: 'Consultants', logoBg: 'bg-slate-600', logoText: 'GU' }];
+  }, []);
 
   // Filter Categories
   const FILTER_OPTIONS = useMemo(() => [
@@ -998,8 +993,8 @@ export default function BusinessFeed({
       category: matchedPublisher.category as any,
       logoBg: matchedPublisher.logoBg,
       logoText: matchedPublisher.logoText,
-      verified: true,
-      premium: matchedPublisher.id === 'ent-1' || matchedPublisher.id === 'ent-2' || matchedPublisher.id === 'ent-5',
+      verified: currentOrgVerified(),
+      premium: false,
       timestamp: 'Just Now',
       postType: newPostType,
       title: newPostTitle,
@@ -1090,8 +1085,8 @@ export default function BusinessFeed({
       category: matched ? matched.category : 'Developers',
       logoBg: matched ? matched.logoBg : 'bg-indigo-600',
       logoText: matched ? matched.logoText : 'AD',
-      verified: true,
-      premium: true,
+      verified: currentOrgVerified(),
+      premium: false,
       timestamp: 'Just Now',
       postType: newPostType,
       title: newPostTitle || 'Insert Headline/Title...',
@@ -1882,20 +1877,12 @@ export default function BusinessFeed({
                   /* Standard Edit mode */
                   <form onSubmit={handlePublishPost} className="space-y-4">
                     
-                    {/* Publisher Selector */}
+                    {/* Publisher: always your own company */}
                     <div>
-                      <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1.5">Publish As Corporate Entity</label>
-                      <select
-                        value={selectedPublisherId}
-                        onChange={(e) => setSelectedPublisherId(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-3 text-slate-300 outline-none"
-                      >
-                        {PUBLISHER_COMPANIES.map(comp => (
-                          <option key={comp.id} value={comp.id}>
-                            {comp.name} ({comp.category})
-                          </option>
-                        ))}
-                      </select>
+                      <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1.5">Publishing as</label>
+                      <div className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-3 text-slate-200">
+                        {PUBLISHER_COMPANIES[0].name}
+                      </div>
                     </div>
 
                     {/* Grid 3 Column */}

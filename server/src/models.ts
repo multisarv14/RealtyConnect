@@ -5,6 +5,9 @@ const organizationSchema = new Schema(
     name: { type: String, required: true, trim: true },
     reraRegistration: { type: String, default: 'N/A' },
     subscriptionPlan: { type: String, default: 'Standard Free' },
+    planId: { type: String, default: 'plan-free' },
+    billingCycle: { type: String, enum: ['monthly', 'yearly'], default: 'monthly' },
+    planExpiresAt: { type: Date, default: null },
 
     // Directory listing
     category: { type: String, default: 'Consultants' },
@@ -13,6 +16,8 @@ const organizationSchema = new Schema(
     state: { type: String, default: '' },
     // Platform-operator organizations are not businesses and stay out of the directory.
     listed: { type: Boolean, default: true },
+    // Set by platform staff after a report; a suspended company cannot send anything to others.
+    suspended: { type: Boolean, default: false },
     // Set by platform staff once statutory documents are checked; never by the company itself.
     verified: { type: Boolean, default: false },
     // Owner-editable public profile; fields are validated in routes/companies.ts.
@@ -37,6 +42,8 @@ const userSchema = new Schema(
     passwordHash: { type: String, required: true },
     name: { type: String, default: '' },
     roles: { type: [String], required: true },
+    // What the person may do inside their company: OWNER > ADMIN > MEMBER > VIEWER.
+    orgRole: { type: String, enum: ['OWNER', 'ADMIN', 'MEMBER', 'VIEWER'], default: 'OWNER' },
     orgId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     status: { type: String, enum: ['ACTIVE', 'LOCKED', 'INACTIVE', 'PENDING_VERIFICATION'], default: 'ACTIVE' },
     failedAttempts: { type: Number, default: 0 },
@@ -62,8 +69,96 @@ const refreshTokenSchema = new Schema({
   tokenHash: { type: String, required: true, unique: true },
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   activeRole: { type: String, required: true },
+  ip: { type: String, default: '' },
+  userAgent: { type: String, default: '' },
+  sessionStart: { type: Date, default: Date.now },
+  lastUsedAt: { type: Date, default: Date.now },
   expiresAt: { type: Date, required: true, index: { expireAfterSeconds: 0 } },
 });
+
+const contactRequestSchema = new Schema(
+  {
+    name: { type: String, required: true },
+    email: { type: String, required: true },
+    phone: { type: String, default: '' },
+    message: { type: String, required: true },
+    handled: { type: Boolean, default: false, index: true },
+    handledBy: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+
+const reportSchema = new Schema(
+  {
+    reporterOrgId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
+    reportedOrgId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
+    reportedBy: { type: String, required: true },
+    reason: { type: String, required: true },
+    details: { type: String, default: '' },
+    status: { type: String, enum: ['open', 'dismissed', 'actioned'], default: 'open', index: true },
+    reviewedBy: { type: String, default: '' },
+    reviewedAt: { type: Date, default: null },
+    note: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+
+const blockSchema = new Schema({
+  orgId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
+  blockedOrgId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
+});
+blockSchema.index({ orgId: 1, blockedOrgId: 1 }, { unique: true });
+
+const verificationSchema = new Schema(
+  {
+    orgId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, unique: true },
+    status: { type: String, enum: ['draft', 'submitted', 'approved', 'rejected'], default: 'draft' },
+    gstin: { type: String, default: '' },
+    pan: { type: String, default: '' },
+    cin: { type: String, default: '' },
+    reraNumber: { type: String, default: '' },
+    documents: [{ fileId: { type: String, required: true }, label: { type: String, required: true }, _id: false }],
+    submittedAt: { type: Date, default: null },
+    reviewedBy: { type: String, default: '' },
+    reviewedAt: { type: Date, default: null },
+    note: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+
+const paymentSchema = new Schema(
+  {
+    orgId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
+    invoiceNo: { type: String, required: true, unique: true },
+    planId: { type: String, required: true },
+    cycle: { type: String, enum: ['monthly', 'yearly'], required: true },
+    amount: { type: Number, required: true },
+    gst: { type: Number, required: true },
+    total: { type: Number, required: true },
+    status: { type: String, enum: ['pending', 'paid', 'failed', 'cancelled'], default: 'pending' },
+    method: { type: String, default: '' },
+    reference: { type: String, default: '' },
+    razorpayOrderId: { type: String, default: '' },
+    requestedBy: { type: String, required: true },
+    confirmedBy: { type: String, default: '' },
+    paidAt: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+
+const inviteSchema = new Schema(
+  {
+    orgId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
+    email: { type: String, required: true, lowercase: true, trim: true },
+    name: { type: String, default: '' },
+    orgRole: { type: String, enum: ['ADMIN', 'MEMBER', 'VIEWER'], required: true },
+    stakeholderRole: { type: String, required: true },
+    codeHash: { type: String, required: true, unique: true },
+    invitedBy: { type: String, required: true },
+    expiresAt: { type: Date, required: true, index: { expireAfterSeconds: 0 } },
+  },
+  { timestamps: true }
+);
 
 const auditLogSchema = new Schema({
   seq: { type: Number, required: true, unique: true },
@@ -139,6 +234,9 @@ const uploadedFileSchema = new Schema(
     md5: { type: String, required: true },
     uploaderId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     uploaderEmail: { type: String, required: true },
+    // 'network': any signed-in user can open it (e.g. an RFQ attachment). Otherwise only the owner and companies it was shared with.
+    visibility: { type: String, enum: ['private', 'network'], default: 'private' },
+    sharedWith: { type: [Schema.Types.ObjectId], default: [] },
     orgId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
   },
   { timestamps: true }
@@ -164,6 +262,12 @@ storeEntrySchema.index({ key: 1, owner: 1 }, { unique: true });
 export const Organization = mongoose.model('Organization', organizationSchema);
 export const User = mongoose.model('User', userSchema);
 export const Role = mongoose.model('Role', roleSchema);
+export const ContactRequest = mongoose.model('ContactRequest', contactRequestSchema);
+export const Report = mongoose.model('Report', reportSchema);
+export const Block = mongoose.model('Block', blockSchema);
+export const Verification = mongoose.model('Verification', verificationSchema);
+export const Payment = mongoose.model('Payment', paymentSchema);
+export const Invite = mongoose.model('Invite', inviteSchema);
 export const RefreshToken = mongoose.model('RefreshToken', refreshTokenSchema);
 export const AuditLog = mongoose.model('AuditLog', auditLogSchema);
 export const SystemConfig = mongoose.model('SystemConfig', systemConfigSchema);

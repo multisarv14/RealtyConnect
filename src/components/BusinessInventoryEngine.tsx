@@ -1,4 +1,5 @@
 import { appStore } from '../lib/appStore';
+import { downloadCsv } from '../lib/exportFile';
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Building2, Users, CheckCircle2, ArrowRight, MapPin, Mail, Phone, 
@@ -1815,13 +1816,35 @@ export default function BusinessInventoryEngine({
 
                   <button
                     onClick={() => {
-                      onLogTriggered('INVENTORY_REPORT_GENERATED', 'inventory_reports', rep.action, 'SUCCESS', `Inventory: Compiled and generated PDF audit layout for "${rep.title}".`);
-                      showToast(`Compiled report: ${rep.title}`, 'success');
+                      const stockCols = [{ key: 'code', label: 'Code' }, { key: 'name', label: 'Item' }, { key: 'category', label: 'Category' }, { key: 'warehouse', label: 'Warehouse' }, { key: 'currentStock', label: 'In stock' }, { key: 'reservedStock', label: 'Reserved' }, { key: 'availableStock', label: 'Available' }, { key: 'minStockLevel', label: 'Minimum' }, { key: 'unitOfMeasure', label: 'Unit' }, { key: 'preferredSupplier', label: 'Supplier' }, { key: 'associatedProject', label: 'Project' }, { key: 'status', label: 'Status' }];
+                      const asRows = (list: unknown[]) => list as Record<string, unknown>[];
+                      const group = (keyName: 'preferredSupplier' | 'associatedProject' | 'warehouse') =>
+                        Object.entries(items.reduce<Record<string, { count: number; stock: number }>>((acc, i) => {
+                          const k = (i[keyName] as string) || 'Unassigned';
+                          return { ...acc, [k]: { count: (acc[k]?.count || 0) + 1, stock: (acc[k]?.stock || 0) + i.currentStock } };
+                        }, {})).map(([name, v]) => ({ name, count: (v as { count: number }).count, stock: (v as { stock: number }).stock }));
+                      const groupCols = [{ key: 'name', label: 'Name' }, { key: 'count', label: 'Items' }, { key: 'stock', label: 'Units in stock' }];
+                      const title = rep.title;
+                      const datasets: Record<string, { cols: { key: string; label: string }[]; rows: Record<string, unknown>[] }> = {
+                        'Stock Summary Report': { cols: stockCols, rows: asRows(items) },
+                        'Warehouse Utilization Report': { cols: groupCols, rows: group('warehouse') },
+                        'Low Stock Deficit Report': { cols: stockCols, rows: asRows(items.filter(i => i.availableStock <= i.minStockLevel)) },
+                        'Supplier Inventory Ledger': { cols: groupCols, rows: group('preferredSupplier') },
+                        'Project Inventory Allocation': { cols: groupCols, rows: group('associatedProject') },
+                        'Stock Movement Audit Log': { cols: [{ key: 'timestamp', label: 'When' }, { key: 'type', label: 'Type' }, { key: 'itemName', label: 'Item' }, { key: 'quantity', label: 'Quantity' }, { key: 'unit', label: 'Unit' }, { key: 'sourceLocation', label: 'From' }, { key: 'destLocation', label: 'To' }, { key: 'operator', label: 'By' }, { key: 'notes', label: 'Notes' }], rows: asRows(movements) }
+                      };
+                      const data = datasets[title];
+                      if (!data || data.rows.length === 0) {
+                        showToast(`There is nothing to include in "${title}" yet.`, 'info');
+                        return;
+                      }
+                      downloadCsv(`${title.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}`, data.cols, data.rows);
+                      onLogTriggered('INVENTORY_REPORT_GENERATED', 'inventory_reports', rep.action, 'SUCCESS', `Inventory: exported "${title}" (${data.rows.length} rows)`);
                     }}
                     className="mt-4 w-full bg-slate-950 border border-slate-900 hover:bg-slate-900 text-slate-200 text-xs font-mono font-bold py-1.5 rounded flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Compile PDF Ledger</span>
+                    <span>Download CSV</span>
                   </button>
                 </div>
               );

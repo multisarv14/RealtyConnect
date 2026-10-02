@@ -1,3 +1,4 @@
+import { downloadCsv } from '../lib/exportFile';
 import React, { useState } from 'react';
 import { 
   Search, Users, Building2, Briefcase, Plus, Grid, List, CheckCircle2, 
@@ -971,12 +972,17 @@ export default function BusinessHrView({
             </div>
             <button
               onClick={() => {
-                showToast('HR report file compiled & downloaded successfully (Simulated)', 'success');
-                onLogTriggered('HR_REPORT_DOWNLOAD', 'hr', 'all', 'SUCCESS', 'Downloaded consolidated HR and hiring yield audit.');
+                if (employees.length + candidates.length === 0) return showToast('There are no employees or candidates to export yet.', 'info');
+                const rows = [
+                  ...(employees as unknown as Record<string, unknown>[]).map(e => ({ kind: 'Employee', code: e.code, name: e.name, department: e.department, role: e.designation, email: e.email, mobile: e.mobile, status: e.status, date: e.joiningDate })),
+                  ...(candidates as unknown as Record<string, unknown>[]).map(c => ({ kind: 'Candidate', code: c.id, name: c.name, department: '', role: c.appliedPositionTitle, email: c.email, mobile: c.phone, status: c.status, date: '' }))
+                ];
+                downloadCsv(`hr-report-${new Date().toISOString().slice(0, 10)}`, [{ key: 'kind', label: 'Record' }, { key: 'code', label: 'Code' }, { key: 'name', label: 'Name' }, { key: 'department', label: 'Department' }, { key: 'role', label: 'Designation / applied for' }, { key: 'email', label: 'Email' }, { key: 'mobile', label: 'Mobile' }, { key: 'status', label: 'Status' }, { key: 'date', label: 'Joined / applied' }], rows);
+                onLogTriggered('HR_REPORT_DOWNLOAD', 'hr', 'all', 'SUCCESS', `Exported ${rows.length} HR records.`);
               }}
               className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-lg uppercase tracking-wide cursor-pointer"
             >
-              Export Compiled HR Data
+              Download HR Data (CSV)
             </button>
           </div>
 

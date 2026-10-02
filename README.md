@@ -101,19 +101,32 @@ every visitor according to the profile and contact visibility settings.
 - The bundled sample companies are shown beside real ones only in demo mode (`SEED_DEMO_USERS`).
 - Nothing is marked "verified" until a verification flow exists (see below).
 
+## Network, trust, plans and team
+
+- **Company-to-company delivery** (`/api/v1/network`): connection requests, enquiries, messages, RFQ quotations,
+  opportunity responses and meeting invites are written into the recipient company's workspace; sender identity
+  comes from the session. Screens refresh from the server every few seconds.
+- **Verification** (`/api/v1/verification`): GSTIN/RERA/PAN/CIN format and check-digit validation, document upload,
+  and approval by a platform reviewer. Only a reviewer can set the "Verified" badge.
+- **Plans and billing** (`/api/v1/billing`, `shared/plans.ts`): modules, seats, listings, RFQs per month and storage
+  are enforced on the server. Upgrades are confirmed manually by platform staff, or through Razorpay when
+  `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` are set.
+- **Team** (`/api/v1/team`): owner/admin/member/viewer roles inside a company, invite links, seat limits.
+- **Moderation** (`/api/v1/moderation`): report and block companies; reviewers can suspend.
+- **Email and reminders**: set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` to send email
+  notifications and meeting reminders.
+- **Demo vs blank mode**: with `SEED_DEMO_USERS` off (default in production) new companies start with empty workspaces
+  and no sample companies. The Control Center and Analytics are calculated from the company's own records.
+
 ## Not built yet
 
-- **Cross-company delivery.** Messages, enquiries, quotations and connection requests are saved in
-  the sender's organization only. The other company does not receive them; the replies shown in
-  the UI are still simulated on the client.
-- **Verification.** No company is verified yet: there are no document uploads or admin approval, so the "Verified" badge never appears for real companies.
-- **Starter data.** A new organization sees the sample records that ship with each module the first
-  time it opens that module, and those records are saved as its own data.
-- **Virus scanning.** Uploaded files are released from quarantine after a short hold without being
-  scanned. Connect a scanner in `releaseFromQuarantine` (`server/src/routes/files.ts`).
-- **Email / SMS / push.** These notifications are stored with status `queued`; no provider is connected.
-- **The onboarding walkthrough** (`RegistrationOnboarding`) is a guided demo; it does not create an account.
-  Accounts are created from the "Create Account" tab of the sign-in dialog.
+- **Virus scanning.** Files are released from quarantine after a short hold without being scanned
+  (`releaseFromQuarantine` in `server/src/routes/files.ts`; `CLAMAV_*` is declared but unused).
+- **SMS, push and WhatsApp.** No provider is connected.
+- **Government registry lookups.** ID numbers are validated by format and checksum only; reviewers check the documents.
+- **Untested against live services:** SMTP and Razorpay.
+- **Escrow / bank integration** and lead follow-up reminders.
+- Contact details in the home page footer are placeholders.
 
 ## Deploying
 

@@ -1,3 +1,5 @@
+import { errorMessage } from '../lib/api';
+import { formatBytes, saveFile, uploadFile } from '../lib/files';
 import React, { useState } from 'react';
 import { 
   Folder as FolderIcon, FileText, Plus, PlusCircle, Search, Grid, List, 
@@ -79,6 +81,23 @@ export default function BusinessDmsView({
 
   // Drag over state for upload drag & drop visual feedback
   const [isDragging, setIsDragging] = useState(false);
+  const [pendingFile, setPendingFile] = useState<{ fileId: string; name: string; size: string } | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const attachFile = async (file: File) => {
+    setIsUploadingFile(true);
+    try {
+      const stored = await uploadFile(file);
+      setPendingFile({ fileId: stored.id, name: stored.name, size: formatBytes(stored.size) });
+      const base = stored.name.substring(0, stored.name.lastIndexOf('.')) || stored.name;
+      setUploadForm(prev => ({ ...prev, title: prev.title || base, documentType: stored.name.split('.').pop() || 'pdf' }));
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
+    } finally {
+      setIsUploadingFile(false);
+    }
+  };
 
   // Folder actions
   const handleCreateFolder = (e: React.FormEvent) => {
@@ -116,9 +135,15 @@ export default function BusinessDmsView({
       showToast('Please specify a document title.', 'error');
       return;
     }
+    if (!pendingFile) {
+      showToast('Attach a file first.', 'error');
+      return;
+    }
 
     const newDoc: DocumentRecord = {
-      id: `DOC-${uploadForm.category.slice(0,3).toUpperCase()}-${Math.floor(100 + Math.random()*900)}`,
+      id: `DOC-${uploadForm.category.slice(0,3).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`,
+      fileId: pendingFile.fileId,
+      fileName: pendingFile.name,
       title: uploadForm.title.replace(/\s+/g, '_'),
       documentType: uploadForm.documentType,
       category: uploadForm.category,
@@ -145,6 +170,7 @@ export default function BusinessDmsView({
     setIsUploadOpen(false);
     // Reset form
     setUploadForm(prev => ({ ...prev, title: '', description: '' }));
+    setPendingFile(null);
     
     showToast(`Document "${newDoc.title}" registered!`, 'success');
     addNotification('Document Uploaded', `Document ${newDoc.title} has been uploaded to the registry.`);
@@ -751,20 +777,25 @@ export default function BusinessDmsView({
                 e.preventDefault();
                 setIsDragging(false);
                 const file = e.dataTransfer.files[0];
-                if (file) {
-                  const titleWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-                  const ext = file.name.split('.').pop() || 'pdf';
-                  setUploadForm(prev => ({ ...prev, title: titleWithoutExt, documentType: ext }));
-                  showToast(`Parsed file: ${file.name}`, 'info');
-                }
+                if (file) void attachFile(file);
               }}
+              onClick={() => fileInputRef.current?.click()}
               className={`p-6 border-2 border-dashed rounded-xl text-center space-y-2 transition-all cursor-pointer ${
                 isDragging ? 'border-emerald-500 bg-emerald-500/5' : 'border-slate-800 bg-slate-950/40'
               }`}
             >
-              <Sparkles className="w-8 h-8 text-emerald-400 mx-auto animate-pulse" />
-              <p className="text-xs font-bold text-white">Drag & drop your business file here, or click to browse</p>
-              <p className="text-[10px] text-slate-500 font-mono">Supports PDF, DWG, XLSX, ZIP, PNG (Max 50MB)</p>
+              <input ref={fileInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void attachFile(f); }} />
+              <Sparkles className="w-8 h-8 text-emerald-400 mx-auto" />
+              {isUploadingFile ? (
+                <p className="text-xs font-bold text-white">Uploading...</p>
+              ) : pendingFile ? (
+                <p className="text-xs font-bold text-emerald-400">{pendingFile.name} ({pendingFile.size}) is ready. Fill in the details and register it.</p>
+              ) : (
+                <>
+                  <p className="text-xs font-bold text-white">Drag and drop your file here, or click to browse</p>
+                  <p className="text-[10px] text-slate-500 font-mono">PDF, PNG or JPEG, up to the size your plan allows</p>
+                </>
+              )}
             </div>
 
             <form onSubmit={handleUploadDocument} className="space-y-4 text-xs">
@@ -1062,7 +1093,11 @@ export default function BusinessDmsView({
 
               <button
                 onClick={() => {
-                  showToast(`File download triggered: ${selectedDoc.title}.${selectedDoc.documentType}`, 'success');
+                  if (!selectedDoc.fileId) {
+                    showToast('This sample record has no stored file.', 'info');
+                    return;
+                  }
+                  saveFile(selectedDoc.fileId, selectedDoc.fileName || `${selectedDoc.title}.${selectedDoc.documentType}`).then(ok => ok || showToast('The file could not be downloaded.', 'error'));
                   onLogTriggered('DMS_FILE_DOWNLOADED', 'documents', selectedDoc.id, 'SUCCESS', `Downloaded file ${selectedDoc.title}`);
                 }}
                 className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded uppercase tracking-wider text-[10px] flex items-center gap-1.5 cursor-pointer"

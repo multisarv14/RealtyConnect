@@ -1,4 +1,5 @@
 import { appStore } from '../lib/appStore';
+import { downloadCsv } from '../lib/exportFile';
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Building2, Users, CheckCircle2, ArrowRight, MapPin, Mail, Phone, 
@@ -1695,13 +1696,27 @@ export default function BusinessFinanceEngine({
                 </div>
                 <button
                   onClick={() => {
-                    showToast(`Generated & downloaded "${rep.title}" PDF report.`, 'success');
-                    onLogTriggered('FINANCE_REPORT_GENERATED', 'reports', rep.type, 'SUCCESS', `Finance: Generated audit report ${rep.title}`);
+                    const invoiceCols = [{ key: 'invoiceNumber', label: 'Invoice' }, { key: 'customer', label: 'Customer' }, { key: 'project', label: 'Project' }, { key: 'invoiceDate', label: 'Date' }, { key: 'dueDate', label: 'Due' }, { key: 'totalAmount', label: 'Total' }, { key: 'paidAmount', label: 'Paid' }, { key: 'balance', label: 'Balance' }, { key: 'paymentStatus', label: 'Status' }];
+                    const withBalance = billings.map(b => ({ ...b, balance: (b.totalAmount || 0) - (b.paidAmount || 0) }));
+                    const projectNames = Array.from(new Set(expenses.map(e => e.project).filter(Boolean)));
+                    const sets: Record<string, { cols: { key: string; label: string }[]; rows: Record<string, unknown>[] }> = {
+                      revenue: { cols: invoiceCols, rows: withBalance.filter(b => (b.paidAmount || 0) > 0) },
+                      outstanding: { cols: invoiceCols, rows: withBalance.filter(b => b.balance > 0 && b.paymentStatus !== 'Cancelled' && b.paymentStatus !== 'Draft') },
+                      expense: { cols: [{ key: 'id', label: 'Expense' }, { key: 'date', label: 'Date' }, { key: 'category', label: 'Category' }, { key: 'project', label: 'Project' }, { key: 'supplier', label: 'Supplier' }, { key: 'amount', label: 'Amount' }, { key: 'reference', label: 'Reference' }], rows: expenses as unknown as Record<string, unknown>[] },
+                      budget: { cols: [{ key: 'project', label: 'Project' }, { key: 'spent', label: 'Spent' }, { key: 'invoiced', label: 'Invoiced' }, { key: 'net', label: 'Invoiced minus spent' }], rows: projectNames.map(name => { const spent = expenses.filter(e => e.project === name).reduce((t, e) => t + e.amount, 0); const invoiced = billings.filter(b => b.project === name).reduce((t, b) => t + b.totalAmount, 0); return { project: name, spent, invoiced, net: invoiced - spent }; }) }
+                    };
+                    const data = sets[rep.type];
+                    if (data.rows.length === 0) {
+                      showToast(`There is nothing to include in the ${rep.title.toLowerCase()} yet.`, 'info');
+                      return;
+                    }
+                    downloadCsv(`${rep.type}-report-${new Date().toISOString().slice(0, 10)}`, data.cols, data.rows);
+                    onLogTriggered('FINANCE_REPORT_GENERATED', 'reports', rep.type, 'SUCCESS', `Finance: exported ${rep.title} (${data.rows.length} rows)`);
                   }}
                   className="w-full py-1 rounded bg-slate-900 hover:bg-slate-850 text-[10px] font-mono font-bold uppercase tracking-wider border border-slate-800 text-slate-300 flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <FileDown className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Download Report</span>
+                  <span>Download CSV</span>
                 </button>
               </div>
             ))}
@@ -1714,14 +1729,13 @@ export default function BusinessFinanceEngine({
             <div className="bg-slate-900/20 border border-slate-900 rounded-xl p-5 text-left space-y-3">
               <h4 className="text-xs font-bold text-white uppercase tracking-wider border-b border-slate-900 pb-2 font-mono">Customer Ledger Sheet</h4>
               <div className="space-y-2 text-xs font-mono text-slate-300">
-                <div className="flex justify-between border-b border-slate-900 pb-1">
-                  <span>Rajesh Aggarwal</span>
-                  <span className="text-emerald-400 font-bold">Total Invoiced: ₹13,66,000</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-900 pb-1">
-                  <span>Phoenix Hub Retail</span>
-                  <span className="text-amber-400 font-bold">Total Invoiced: ₹4,13,000</span>
-                </div>
+                {billings.length === 0 && <p className="text-slate-500">No invoices yet.</p>}
+                {Object.entries(billings.reduce<Record<string, number>>((acc, b) => ({ ...acc, [b.customer]: (acc[b.customer] || 0) + (b.totalAmount || 0) }), {})).map(([customer, total]) => (
+                  <div key={customer} className="flex justify-between border-b border-slate-900 pb-1">
+                    <span>{customer}</span>
+                    <span className="text-emerald-400 font-bold">Total invoiced: ₹{Number(total).toLocaleString('en-IN')}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1729,14 +1743,13 @@ export default function BusinessFinanceEngine({
             <div className="bg-slate-900/20 border border-slate-900 rounded-xl p-5 text-left space-y-3">
               <h4 className="text-xs font-bold text-white uppercase tracking-wider border-b border-slate-900 pb-2 font-mono">Vendor Commercial Ledger</h4>
               <div className="space-y-2 text-xs font-mono text-slate-300">
-                <div className="flex justify-between border-b border-slate-900 pb-1">
-                  <span>Elite Materials Group</span>
-                  <span className="text-slate-400">Total Purchase: ₹4,50,000</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-900 pb-1">
-                  <span>Soni Crane Services</span>
-                  <span className="text-slate-400">Total Purchase: ₹85,000</span>
-                </div>
+                {expenses.filter(e => e.supplier).length === 0 && <p className="text-slate-500">No supplier expenses yet.</p>}
+                {Object.entries(expenses.filter(e => e.supplier).reduce<Record<string, number>>((acc, e) => ({ ...acc, [e.supplier]: (acc[e.supplier] || 0) + e.amount }), {})).map(([supplier, total]) => (
+                  <div key={supplier} className="flex justify-between border-b border-slate-900 pb-1">
+                    <span>{supplier}</span>
+                    <span className="text-slate-400">Total purchases: ₹{Number(total).toLocaleString('en-IN')}</span>
+                  </div>
+                ))}
               </div>
             </div>
 

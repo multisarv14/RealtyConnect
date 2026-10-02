@@ -8,10 +8,16 @@ import { ZodError } from 'zod';
 import { config } from './config';
 import { HttpError } from './middleware/auth';
 import { authRouter } from './routes/auth';
+import { billingRouter } from './routes/billing';
 import { companiesRouter } from './routes/companies';
 import { filesRouter } from './routes/files';
+import { moderationRouter } from './routes/moderation';
+import { networkRouter } from './routes/network';
 import { platformRouter } from './routes/platform';
+import { publicRouter } from './routes/public';
 import { storeRouter } from './routes/store';
+import { teamRouter } from './routes/team';
+import { verificationRouter } from './routes/verification';
 
 export function createApp() {
   const app = express();
@@ -30,6 +36,12 @@ export function createApp() {
   app.use('/api/v1/auth', authRouter);
   app.use('/api/v1/companies', companiesRouter);
   app.use('/api/v1/files', filesRouter);
+  app.use('/api/v1/network', networkRouter);
+  app.use('/api/v1/team', teamRouter);
+  app.use('/api/v1/billing', billingRouter);
+  app.use('/api/v1/verification', verificationRouter);
+  app.use('/api/v1/moderation', moderationRouter);
+  app.use('/api/v1/public', publicRouter);
   app.use('/api/v1/store', storeRouter);
   app.use('/api/v1', platformRouter);
 

@@ -3,7 +3,11 @@
  * High-fidelity enterprise collaboration platform for the Indian B2B real estate sector.
  */
 
-import { currentUserName } from '../lib/identity';
+import { currentOrgName, currentUserName } from '../lib/identity';
+import { api, errorMessage } from '../lib/api';
+import { formatBytes, saveFile, uploadFile } from '../lib/files';
+import { isRegisteredCompanyId } from '../lib/companies';
+import { useStoreSync } from '../lib/usePersistentState';
 import { appStore } from '../lib/appStore';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
@@ -26,6 +30,7 @@ export interface Message {
     name: string;
     type: 'pdf' | 'doc' | 'excel' | 'image' | 'drawing' | 'boq' | 'contract' | 'presentation';
     size: string;
+    fileId?: string;
   };
   replyToId?: string;
 }
@@ -432,8 +437,17 @@ export default function BusinessMessagingEngine({
 
   // Selected Conversation ID
   const [selectedConvId, setSelectedConvId] = useState<string>(() => {
-    return DEFAULT_CONVERSATIONS[0].id;
+    try {
+      const saved = appStore.getItem('realtyconnect_conversations');
+      const list: Conversation[] = saved ? JSON.parse(saved) : DEFAULT_CONVERSATIONS;
+      return list[0]?.id ?? '';
+    } catch {
+      return DEFAULT_CONVERSATIONS[0].id;
+    }
   });
+
+  // Messages delivered by other companies show up without a reload.
+  useStoreSync<Conversation[]>('realtyconnect_conversations', setConversations);
 
   // Search & Filters State
   const [searchTerm, setSearchTerm] = useState('');
@@ -445,7 +459,9 @@ export default function BusinessMessagingEngine({
   // Input states
   const [newMessageText, setNewMessageText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<{ name: string; type: any; size: string } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<{ name: string; type: any; size: string; fileId?: string } | null>(null);
+  const [isAttaching, setIsAttaching] = useState(false);
+  const attachInputRef = useRef<HTMLInputElement>(null);
   
   // Message interaction states
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
@@ -481,14 +497,6 @@ export default function BusinessMessagingEngine({
     return () => clearInterval(timer);
   }, []);
   
-  // Pre-prepared mock files database to simulate actual file picker integration
-  const MOCK_ATTACHMENTS = [
-    { name: 'Elite_BOQ_Steel_Consolidation_v2.xlsx', type: 'excel', size: '1.4 MB' },
-    { name: 'Metro_Station_Boring_Piles_Drawing.cad', type: 'drawing', size: '22 MB' },
-    { name: 'Apex_OPC53_Technical_Audit_Report.pdf', type: 'pdf', size: '3.1 MB' },
-    { name: 'Corporate_Supply_Agreement_Godrej_Signed.pdf', type: 'contract', size: '4.2 MB' },
-    { name: 'RealtyConnect_Networking_Introduction_Brief.pptx', type: 'presentation', size: '5.8 MB' }
-  ];
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -540,6 +548,10 @@ export default function BusinessMessagingEngine({
   // Mark selected as read
   useEffect(() => {
     if (activeConv && activeConv.unreadCount > 0) {
+      // The other company sees its messages as read.
+      if (isRegisteredCompanyId(activeConv.companyId)) {
+        api('POST', '/network/messages/read', { toOrgId: activeConv.companyId, conversationId: activeConv.id }).catch(() => undefined);
+      }
       const updated = conversations.map(c => {
         if (c.id === activeConv.id) {
           return { ...c, unreadCount: 0 };
@@ -548,7 +560,7 @@ export default function BusinessMessagingEngine({
       });
       saveConversations(updated);
     }
-  }, [selectedConvId]);
+  }, [selectedConvId, activeConv?.unreadCount]);
 
   // Simulated Typing indicator helper
   const triggerTypingIndicator = () => {
@@ -566,8 +578,8 @@ export default function BusinessMessagingEngine({
     const newMsg: Message = {
       id: `msg-user-${Date.now()}`,
       sender: 'self',
-      senderName: 'Self (Admin)',
-      senderCompany: 'Elite Materials & Co',
+      senderName: currentUserName(),
+      senderCompany: currentOrgName(),
       text: newMessageText,
       timestamp: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       type: selectedFile && selectedFile.type === 'contract' ? 'note' : 'text',
@@ -603,40 +615,33 @@ export default function BusinessMessagingEngine({
       `Sent B2B message to ${activeConv.companyName} on ${activeConv.conversationType} thread.`
     );
 
-    // Simulate double-checkmark updates
-    setTimeout(() => {
+    const setTick = (status: 'delivered' | 'read') =>
       setConversations(prev => {
-        const updated = prev.map(c => {
-          if (c.id === activeConv.id) {
-            return {
-              ...c,
-              messages: c.messages.map(m => m.id === newMsg.id ? { ...m, status: 'delivered' as const } : m)
-            };
-          }
-          return c;
-        });
-        appStore.setItem('realtyconnect_conversations', JSON.stringify(updated));
-        return updated;
-      });
-    }, 1200);
-
-    // Simulate "read" checkmark & automatic typing reply placeholder
-    setTimeout(() => {
-      setConversations(prev => {
-        const updated = prev.map(c => {
-          if (c.id === activeConv.id) {
-            return {
-              ...c,
-              messages: c.messages.map(m => m.id === newMsg.id ? { ...m, status: 'read' as const } : m)
-            };
-          }
-          return c;
-        });
+        const updated = prev.map(c => (c.id === activeConv.id ? { ...c, messages: c.messages.map(m => (m.id === newMsg.id ? { ...m, status } : m)) } : c));
         appStore.setItem('realtyconnect_conversations', JSON.stringify(updated));
         return updated;
       });
 
-      // Simulate a quick reply typing indicator from the corporate client
+    if (isRegisteredCompanyId(activeConv.companyId)) {
+      // A real company: the message is delivered to it, and the tick turns on only once that is true.
+      api('POST', '/network/messages', {
+        toOrgId: activeConv.companyId,
+        conversationId: activeConv.id,
+        messageId: newMsg.id,
+        text: newMsg.text || (newMsg.attachment ? `Attachment: ${newMsg.attachment.name}` : ''),
+        conversationType: activeConv.conversationType,
+        ...(activeConv.relatedEntity ? { related: activeConv.relatedEntity } : {}),
+        ...(newMsg.attachment ? { attachment: newMsg.attachment } : {})
+      })
+        .then(() => setTick('delivered'))
+        .catch(err => showToast(`Message not delivered: ${errorMessage(err)}`, 'error'));
+      return;
+    }
+
+    // Sample companies (demo mode) keep the scripted behaviour.
+    setTimeout(() => setTick('delivered'), 1200);
+    setTimeout(() => {
+      setTick('read');
       triggerTypingIndicator();
     }, 2800);
   };
@@ -769,6 +774,19 @@ export default function BusinessMessagingEngine({
   // Total Unread KPI
   const totalUnreadCount = conversations.reduce((acc, c) => acc + (c.archived ? 0 : c.unreadCount), 0);
   const urgentCount = conversations.filter(c => !c.archived && c.priority === 'Urgent').length;
+
+  if (!activeConv) {
+    return (
+      <div className="bg-slate-900/40 border border-slate-900 rounded-2xl p-10 text-center space-y-2" id="messaging-empty">
+        <MessageSquare className="w-8 h-8 text-slate-500 mx-auto" />
+        <h2 className="font-bold text-base text-slate-100">No conversations yet</h2>
+        <p className="text-xs text-slate-400 max-w-md mx-auto">
+          Conversations start when you send an enquiry or message to another company from the directory, the marketplace or an RFQ,
+          or when another company contacts you.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 text-slate-100 animate-fade-in text-xs max-w-full">
@@ -1174,7 +1192,8 @@ export default function BusinessMessagingEngine({
                               </div>
                               <button
                                 onClick={() => {
-                                  showToast(`Downloading file ${msg.attachment!.name} (Placeholder)`, 'info');
+                                  if (msg.attachment!.fileId) saveFile(msg.attachment!.fileId, msg.attachment!.name).then(ok => ok || showToast('The file could not be downloaded.', 'error'));
+                                  else showToast('This sample message has no downloadable file.', 'info');
                                   onLogTriggered('MESSAGING_ATTACHMENT_DOWNLOAD_TRIGGERED', 'attachments', msg.id, 'SUCCESS', `Triggered mock attachment download for ${msg.attachment!.name}`);
                                 }}
                                 className="p-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white rounded-lg transition-all shrink-0"
@@ -1304,37 +1323,36 @@ export default function BusinessMessagingEngine({
 
                 {/* Entry row */}
                 <div className="flex items-center gap-2">
-                  {/* File Pick trigger */}
-                  <div className="relative group">
-                    <button
-                      type="button"
-                      className="p-2.5 rounded-xl bg-slate-950 border border-slate-850 text-slate-400 hover:text-white transition-all hover:border-slate-700"
-                      title="Attach Technical CAD Drawings, BOQs, Excel proposals"
-                    >
-                      <Paperclip className="w-4 h-4" />
-                    </button>
-                    {/* Simulated File List selection */}
-                    <div className="absolute bottom-full left-0 mb-2 w-64 bg-slate-900 border border-slate-800 rounded-xl shadow-xl p-2 hidden group-hover:block hover:block z-50 animate-fade-in text-[10px]">
-                      <div className="p-1.5 border-b border-slate-800 font-mono font-bold text-slate-400 uppercase text-[8px]">
-                        Document vault (sample files)
-                      </div>
-                      <div className="space-y-1 mt-1.5">
-                        {MOCK_ATTACHMENTS.map((f, i) => (
-                          <div
-                            key={i}
-                            onClick={() => {
-                              setSelectedFile({ name: f.name, type: f.type, size: f.size });
-                              showToast(`Attached ${f.name} to message pipeline.`, 'success');
-                            }}
-                            className="p-2 rounded-lg bg-slate-950 hover:bg-indigo-950/40 border border-slate-900 hover:border-indigo-500/20 text-slate-300 cursor-pointer flex justify-between items-center transition-all"
-                          >
-                            <span className="truncate max-w-[150px] font-mono text-[9px]">{f.name}</span>
-                            <span className="text-[7.5px] bg-slate-900 px-1 py-0.2 rounded font-mono font-bold text-slate-500 uppercase">{f.type}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                  {/* Attach a real file (PDF, PNG or JPEG) */}
+                  <input
+                    ref={attachInputRef}
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    hidden
+                    onChange={async e => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      if (!file) return;
+                      setIsAttaching(true);
+                      try {
+                        const stored = await uploadFile(file);
+                        setSelectedFile({ name: stored.name, type: stored.type === 'application/pdf' ? 'pdf' : 'image', size: formatBytes(stored.size), fileId: stored.id });
+                      } catch (err) {
+                        showToast(errorMessage(err), 'error');
+                      } finally {
+                        setIsAttaching(false);
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={isAttaching}
+                    onClick={() => attachInputRef.current?.click()}
+                    className="p-2.5 rounded-xl bg-slate-950 border border-slate-850 text-slate-400 hover:text-white transition-all hover:border-slate-700 disabled:opacity-50"
+                    title="Attach a PDF or image"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </button>
 
                   {/* Core Text Input */}
                   <input

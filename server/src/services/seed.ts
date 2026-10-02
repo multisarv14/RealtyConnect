@@ -85,6 +85,9 @@ export async function seedDatabase() {
     )
   );
 
+  // Permissions added after a role was first seeded.
+  await Role.updateOne({ code: 'ADMIN' }, { $addToSet: { permissions: 'VERIFY_PROFILES' } });
+
   await Promise.all(CONFIGS.map(cfg => SystemConfig.updateOne({ key: cfg.key }, { $setOnInsert: cfg }, { upsert: true })));
 
   // Masters are seeded once; afterwards deletions by admins must stick.
@@ -116,6 +119,13 @@ export async function seedDatabase() {
     console.log(`[seed] created administrator account ${config.adminEmail}`);
   }
 
+  // Organizations from before plans existed: demo companies get the full suite, everyone else Free.
+  if (config.seedDemoUsers) {
+    const demoUsers = await User.find({ email: { $in: DEMO_ACCOUNTS.map(a => a.email) } }).select('orgId').lean();
+    await Organization.updateMany({ _id: { $in: demoUsers.map(u => u.orgId) }, planId: { $exists: false } }, { $set: { planId: 'plan-enterprise', subscriptionPlan: 'Enterprise' } });
+  }
+  await Organization.updateMany({ planId: { $exists: false } }, { $set: { planId: 'plan-free', subscriptionPlan: 'Free' } });
+
   if (config.seedDemoUsers) {
     const passwordHash = await bcrypt.hash(config.demoPassword, 10);
     for (const acct of DEMO_ACCOUNTS) {
@@ -124,7 +134,8 @@ export async function seedDatabase() {
       const org = await Organization.create({
         name: acct.org,
         reraRegistration: acct.rera,
-        subscriptionPlan: acct.plan,
+        subscriptionPlan: 'Enterprise',
+        planId: 'plan-enterprise',
         city: acct.city,
         state: acct.state,
         ...directory,

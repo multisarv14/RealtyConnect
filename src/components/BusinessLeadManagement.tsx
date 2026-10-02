@@ -1,5 +1,6 @@
 import { currentUserName } from '../lib/identity';
 import { appStore } from '../lib/appStore';
+import { useStoreSync } from '../lib/usePersistentState';
 import React, { useState, useEffect } from 'react';
 import { 
   Building, 
@@ -263,11 +264,14 @@ export default function BusinessLeadManagement({ userSession, onLogTriggered, sh
       const saved = appStore.getItem('realtyconnect_leads');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.length > 0) return parsed;
+        return parsed;
       }
     } catch (e) {}
     return SEED_LEADS;
   });
+
+  // Leads delivered by other companies (enquiries, quotations) appear without a reload.
+  useStoreSync<Lead[]>('realtyconnect_leads', setLeads);
 
   // Keep appStore in sync
   useEffect(() => {

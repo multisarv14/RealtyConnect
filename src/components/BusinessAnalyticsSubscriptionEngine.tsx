@@ -1,1760 +1,492 @@
 /**
- * RealtyConnect™ Sprint 23 - Analytics, Business Intelligence & Subscription Management Engine
- * A clean, highly legible Swiss Slate styled dashboard.
+ * Analytics, plan & billing, and data exports.
+ * Every number on the analytics tab is calculated from the company's own saved records; nothing is sample data.
  */
 
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { BarChart2, CreditCard, Download, FileText, Printer, CheckCircle2, Clock, AlertTriangle, Lock } from 'lucide-react';
 import { appStore } from '../lib/appStore';
-import React, { useState, useEffect } from 'react';
-import { 
-  BarChart2, Shield, Calendar, Users, TrendingUp, Layers, DollarSign, 
-  Search, Filter, FileText, Download, Play, CheckCircle2, AlertTriangle, 
-  RefreshCw, ArrowUpRight, HelpCircle, UserCheck, ShieldCheck, 
-  Trash2, Send, Bookmark, CreditCard, Layers3, Activity, Clock, SlidersHorizontal,
-  Plus, ChevronRight, Check, X, Printer, FileSpreadsheet, Lock
-} from 'lucide-react';
+import { api, errorMessage, type Session } from '../lib/api';
+import { downloadCsv, printReport, type ExportColumn } from '../lib/exportFile';
 
 interface EngineProps {
-  userSession: { email: string; role: string; permissions: string[] } | null;
+  userSession: Session | null;
   onLogTriggered: (action: string, entity: string, entityId: string, status: 'SUCCESS' | 'FAILURE' | 'WARNING', details: string) => void;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   onNotificationTriggered: (type: 'email' | 'sms' | 'push' | 'in_app', recipient: string, content: string) => void;
-  setActiveViewMode: (mode: any) => void;
+  setActiveViewMode?: (view: any) => void;
 }
 
-// 1. MOCK INTEGRATED DATA REPRESENTING RECON MODULES
-const INTEGRATION_STATS = {
-  crm: { customerSatisfaction: '94.2%', pipelineDeals: 142, averageLtv: '₹14.2L' },
-  leads: { totalLeads: 2480, convertedLeads: 854, conversionRate: '34.4%' },
-  projects: { totalActive: 12, milestoneStatus: '88% On-Time', delayAlerts: 1 },
-  finance: { grossRevenue: '₹2.48 Cr', monthlyRecurring: '₹34.5 Lakhs', pendingDues: '₹8.4 Lakhs' },
-  procurement: { vendorsEvaluated: 48, totalPoAmount: '₹94.2 Lakhs', savingPct: '12.4%' },
-  inventory: { totalStockItems: 1450, stockoutAlerts: 2, totalValue: '₹58.6 Lakhs' },
-  hr: { activeHeadcount: 124, departmentCount: 8, averagePerformance: '4.8/5.0' },
-  marketplace: { listedProducts: 342, totalSalesValue: '₹18.4 Lakhs', activeSuppliers: 112 },
-  networking: { activeConnections: 412, engagementRate: '78.5%', monthlyMeetings: 64 },
-  feed: { totalPosts: 128, interactionCount: 1542, reachRate: '88.2%' },
-  dms: { totalDocuments: 894, storageUsed: '4.2 GB', storageLimit: '10 GB' }
-};
-
-// 2. MOCK SUBSCRIPTION PLANS (PLAN DETAILS)
-interface SubscriptionPlan {
+interface Plan {
   id: string;
   name: string;
   description: string;
   priceMonthly: number;
   priceYearly: number;
-  trialDuration: string;
-  features: string[];
-  storageLimit: string;
-  userLimit: number;
-  orgLimit: number;
   supportLevel: string;
-  status: 'Active' | 'Popular' | 'Custom';
+  limits: { users: number; storageMb: number; listings: number; rfqsPerMonth: number };
+  features: string[];
 }
 
-const PLANS_DATA: SubscriptionPlan[] = [
-  {
-    id: 'plan-free',
-    name: 'Free Trial',
-    description: 'Basic access to B2B Directory and secure messaging feed.',
-    priceMonthly: 0,
-    priceYearly: 0,
-    trialDuration: '14 Days',
-    features: ['directory', 'messaging', 'business feed'],
-    storageLimit: '500 MB',
-    userLimit: 2,
-    orgLimit: 1,
-    supportLevel: 'Community Support',
-    status: 'Active'
-  },
-  {
-    id: 'plan-starter',
-    name: 'Starter Plan',
-    description: 'Perfect for small scale contracting firms and materials traders.',
-    priceMonthly: 4999,
-    priceYearly: 49900,
-    trialDuration: '0 Days',
-    features: ['directory', 'messaging', 'business feed', 'marketplace', 'crm'],
-    storageLimit: '2 GB',
-    userLimit: 5,
-    orgLimit: 1,
-    supportLevel: 'Email Support',
-    status: 'Active'
-  },
-  {
-    id: 'plan-professional',
-    name: 'Professional Plan',
-    description: 'Ideal for mid-sized builders seeking robust RFQ and project management tools.',
-    priceMonthly: 14999,
-    priceYearly: 149900,
-    trialDuration: '7 Days',
-    features: ['directory', 'messaging', 'business feed', 'marketplace', 'crm', 'projects', 'rfq', 'procurement', 'inventory'],
-    storageLimit: '10 GB',
-    userLimit: 25,
-    orgLimit: 3,
-    supportLevel: 'Priority Email & Chat',
-    status: 'Popular'
-  },
-  {
-    id: 'plan-enterprise',
-    name: 'Enterprise Plan',
-    description: 'Full operational suite including custom Analytics, Finance, and HR DMS.',
-    priceMonthly: 29999,
-    priceYearly: 299900,
-    trialDuration: '14 Days',
-    features: ['directory', 'messaging', 'business feed', 'marketplace', 'crm', 'projects', 'rfq', 'procurement', 'inventory', 'finance', 'analytics', 'hr_dms', 'document_management'],
-    storageLimit: '100 GB',
-    userLimit: 100,
-    orgLimit: 10,
-    supportLevel: 'Dedicated 24/7 Account Manager',
-    status: 'Active'
-  },
-  {
-    id: 'plan-corporate',
-    name: 'Corporate Plan',
-    description: 'Multi-subsidiary governance controls with strict security configurations.',
-    priceMonthly: 59999,
-    priceYearly: 599900,
-    trialDuration: '30 Days',
-    features: ['directory', 'messaging', 'business feed', 'marketplace', 'crm', 'projects', 'rfq', 'procurement', 'inventory', 'finance', 'analytics', 'hr_dms', 'document_management', 'assets_maintenance', 'networking'],
-    storageLimit: '1 TB',
-    userLimit: 999,
-    orgLimit: 50,
-    supportLevel: 'Custom SLA & Onsite Boarding',
-    status: 'Active'
-  }
-];
-
-// 3. INITIAL STATE MODELS FOR LOCALSTORAGE PERSISTENCE
-interface OrgSubscriptionState {
-  currentPlanId: string;
-  billingCycle: 'monthly' | 'yearly';
-  status: 'Trial' | 'Active' | 'Expiring Soon' | 'Expired' | 'Cancelled' | 'Suspended';
-  renewalDate: string;
-  activeUsersCount: number;
-  organizationCount: number;
-  storageUsedBytes: number;
+interface PaymentRow {
+  id: string;
+  invoiceNo: string;
+  planName: string;
+  cycle: string;
+  amount: number;
+  gst: number;
+  total: number;
+  status: 'pending' | 'paid' | 'failed' | 'cancelled';
+  method: string;
+  reference: string;
+  createdAt: string;
+  paidAt: string | null;
 }
 
-const DEFAULT_SUBSCRIPTION: OrgSubscriptionState = {
-  currentPlanId: 'plan-professional',
-  billingCycle: 'monthly',
-  status: 'Active',
-  renewalDate: '2026-08-15',
-  activeUsersCount: 14,
-  organizationCount: 2,
-  storageUsedBytes: 4509715620 // ~4.2 GB
+interface BillingInfo {
+  planId: string;
+  subscribedPlanId: string;
+  cycle: 'monthly' | 'yearly';
+  expiresAt: string | null;
+  lapsed: boolean;
+  plan: Plan;
+  usage: { users: number; storageMb: number; listings: number; rfqsThisMonth: number };
+  plans: Plan[];
+  gstRate: number;
+  payments: PaymentRow[];
+  gateway: { razorpay: boolean; keyId?: string };
+  paymentInstructions: string;
+}
+
+const FEATURE_LABELS: Record<string, string> = {
+  directory: 'Business directory', messaging: 'Messaging', feed: 'Business feed', meetings: 'Meetings', leads: 'Lead management',
+  marketplace: 'Marketplace', rfq: 'RFQs and tenders', opportunities: 'Opportunities', crm: 'CRM', projects: 'Projects',
+  procurement: 'Procurement', inventory: 'Inventory', assets: 'Assets and maintenance', finance: 'Finance and billing',
+  hr_dms: 'HR and documents', analytics: 'Analytics'
 };
 
-export default function BusinessAnalyticsSubscriptionEngine({
-  userSession,
-  onLogTriggered,
-  showToast,
-  onNotificationTriggered,
-  setActiveViewMode
-}: EngineProps) {
+const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+const read = <T,>(key: string): T[] => {
+  try {
+    const parsed = JSON.parse(appStore.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
-  // --- PERSISTENT STATE ---
-  const [subState, setSubState] = useState<OrgSubscriptionState>(() => {
-    try {
-      const saved = appStore.getItem('rc_subscription_state');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return DEFAULT_SUBSCRIPTION;
-  });
+// ---------- Data sets that can be exported ----------
 
-  const [paymentHistory, setPaymentHistory] = useState<any[]>(() => {
-    try {
-      const saved = appStore.getItem('rc_payment_history');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [
-      { id: 'INV-2026-001', date: '2026-07-15', planName: 'Professional Plan', amount: '₹14,999', status: 'Paid', method: 'Razorpay UPI' },
-      { id: 'INV-2026-002', date: '2026-06-15', planName: 'Professional Plan', amount: '₹14,999', status: 'Paid', method: 'Corporate Card' },
-      { id: 'INV-2026-003', date: '2026-05-15', planName: 'Starter Plan (Upgrade Pro-rata)', amount: '₹10,500', status: 'Paid', method: 'Netbanking' }
-    ];
-  });
+interface Dataset {
+  id: string;
+  label: string;
+  key: string;
+  feature?: string;
+  columns: ExportColumn[];
+}
 
-  const [savedDashboards, setSavedDashboards] = useState<string[]>(() => {
-    try {
-      const saved = appStore.getItem('rc_saved_dashboards');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return ['Executive Q2 Revenue View', 'Weekly Lead Progression Track'];
-  });
+const DATASETS: Dataset[] = [
+  { id: 'leads', label: 'Leads', key: 'realtyconnect_leads', feature: 'leads', columns: [{ key: 'id', label: 'Lead no.' }, { key: 'title', label: 'Title' }, { key: 'company', label: 'Company' }, { key: 'contactPerson', label: 'Contact' }, { key: 'email', label: 'Email' }, { key: 'mobile', label: 'Mobile' }, { key: 'status', label: 'Status' }, { key: 'priority', label: 'Priority' }, { key: 'source', label: 'Source' }, { key: 'assignedTo', label: 'Assigned to' }, { key: 'createdDate', label: 'Created' }] },
+  { id: 'crm', label: 'CRM accounts', key: 'realtyconnect_crm_accounts', feature: 'crm', columns: [{ key: 'name', label: 'Account' }, { key: 'businessType', label: 'Type' }, { key: 'industry', label: 'Industry' }, { key: 'currentStage', label: 'Stage' }, { key: 'relationshipStatus', label: 'Relationship' }, { key: 'assignedManager', label: 'Manager' }, { key: 'businessValue', label: 'Business value (₹ lakhs)' }, { key: 'gstNumber', label: 'GSTIN' }] },
+  { id: 'rfqs', label: 'RFQs', key: 'realtyconnect_rfq_list', feature: 'rfq', columns: [{ key: 'rfqNumber', label: 'RFQ no.' }, { key: 'title', label: 'Title' }, { key: 'companyName', label: 'Issued by' }, { key: 'status', label: 'Status' }, { key: 'quotationSubmissionDeadline', label: 'Deadline' }, { key: 'estimatedBudget', label: 'Budget' }, { key: 'bidsCount', label: 'Bids' }] },
+  { id: 'quotes', label: 'Quotations', key: 'realtyconnect_quotation_list', feature: 'rfq', columns: [{ key: 'id', label: 'Quotation' }, { key: 'rfqId', label: 'RFQ' }, { key: 'companyName', label: 'Bidder' }, { key: 'quotationAmount', label: 'Amount' }, { key: 'validity', label: 'Validity' }, { key: 'deliveryTimeline', label: 'Delivery' }, { key: 'status', label: 'Status' }, { key: 'submittedDate', label: 'Submitted' }] },
+  { id: 'projects', label: 'Projects', key: 'realtyconnect_projects', feature: 'projects', columns: [{ key: 'code', label: 'Code' }, { key: 'name', label: 'Project' }, { key: 'client', label: 'Client' }, { key: 'manager', label: 'Manager' }, { key: 'status', label: 'Status' }, { key: 'phase', label: 'Phase' }, { key: 'progress', label: 'Progress %' }, { key: 'budget', label: 'Budget (₹ lakhs)' }, { key: 'expectedCompletion', label: 'Expected completion' }] },
+  { id: 'procurement', label: 'Procurement requests', key: 'realtyconnect_procurement_requests', feature: 'procurement', columns: [{ key: 'id', label: 'Request' }, { key: 'title', label: 'Title' }, { key: 'projectName', label: 'Project' }, { key: 'category', label: 'Category' }, { key: 'estimatedCost', label: 'Estimated cost (₹)' }, { key: 'status', label: 'Status' }, { key: 'requiredDate', label: 'Required by' }, { key: 'assignedSupplierName', label: 'Supplier' }] },
+  { id: 'inventory', label: 'Inventory', key: 'realtyconnect_inventory_items', feature: 'inventory', columns: [{ key: 'code', label: 'Code' }, { key: 'name', label: 'Item' }, { key: 'category', label: 'Category' }, { key: 'warehouse', label: 'Warehouse' }, { key: 'currentStock', label: 'In stock' }, { key: 'reservedStock', label: 'Reserved' }, { key: 'availableStock', label: 'Available' }, { key: 'minStockLevel', label: 'Minimum' }, { key: 'unitOfMeasure', label: 'Unit' }, { key: 'status', label: 'Status' }] },
+  { id: 'invoices', label: 'Invoices', key: 'realtyconnect_finance_billings', feature: 'finance', columns: [{ key: 'invoiceNumber', label: 'Invoice' }, { key: 'customer', label: 'Customer' }, { key: 'project', label: 'Project' }, { key: 'invoiceDate', label: 'Date' }, { key: 'dueDate', label: 'Due' }, { key: 'amount', label: 'Amount' }, { key: 'tax', label: 'Tax' }, { key: 'totalAmount', label: 'Total' }, { key: 'paidAmount', label: 'Paid' }, { key: 'paymentStatus', label: 'Status' }] },
+  { id: 'expenses', label: 'Expenses', key: 'realtyconnect_finance_expenses', feature: 'finance', columns: [{ key: 'id', label: 'Expense' }, { key: 'category', label: 'Category' }, { key: 'description', label: 'Description' }, { key: 'amount', label: 'Amount' }, { key: 'date', label: 'Date' }, { key: 'status', label: 'Status' }] },
+  { id: 'employees', label: 'Employees', key: 'rc_hr_employees', feature: 'hr_dms', columns: [{ key: 'code', label: 'Code' }, { key: 'name', label: 'Name' }, { key: 'department', label: 'Department' }, { key: 'designation', label: 'Designation' }, { key: 'email', label: 'Email' }, { key: 'mobile', label: 'Mobile' }, { key: 'joiningDate', label: 'Joined' }, { key: 'status', label: 'Status' }] },
+  { id: 'assets', label: 'Assets', key: 'rc_assets', feature: 'assets', columns: [{ key: 'id', label: 'Asset' }, { key: 'name', label: 'Name' }, { key: 'category', label: 'Category' }, { key: 'status', label: 'Status' }, { key: 'assignedProjectName', label: 'Project' }] },
+  { id: 'meetings', label: 'Meetings', key: 'realtyconnect_meetings', feature: 'meetings', columns: [{ key: 'title', label: 'Meeting' }, { key: 'relatedCompany', label: 'Company' }, { key: 'meetingDate', label: 'Date' }, { key: 'startTime', label: 'Start' }, { key: 'endTime', label: 'End' }, { key: 'status', label: 'Status' }, { key: 'organizer', label: 'Organizer' }] },
+  { id: 'listings', label: 'Marketplace listings', key: 'realtyconnect_marketplace_listings', feature: 'marketplace', columns: [{ key: 'name', label: 'Listing' }, { key: 'category', label: 'Category' }, { key: 'businessName', label: 'Seller' }, { key: 'price', label: 'Price' }, { key: 'moq', label: 'MOQ' }, { key: 'location', label: 'Location' }] },
+];
 
-  // --- FILTERS & INTERACTIVITY ---
-  const [activeTab, setActiveTab] = useState<'analytics' | 'membership' | 'reports'>('analytics');
-  const [analyticsViewType, setAnalyticsViewType] = useState<'executive' | 'kpis' | 'insights'>('executive');
-  
-  // Custom Dashboard Selection
-  const [customDashboardSelection, setCustomDashboardSelection] = useState<'Executive' | 'Personal' | 'Role-Based' | 'Department'>('Executive');
+export default function BusinessAnalyticsSubscriptionEngine({ userSession, onLogTriggered, showToast, onNotificationTriggered }: EngineProps) {
+  const [tab, setTab] = useState<'analytics' | 'membership' | 'reports'>('analytics');
+  const [billing, setBilling] = useState<BillingInfo | null>(null);
+  const [cycle, setCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [busyPlan, setBusyPlan] = useState<string | null>(null);
 
-  // Search and global filters
-  const [searchQuery, setSearchQuery] = useState('');
-  const [dateFilter, setDateFilter] = useState('Last 30 Days');
-  const [deptFilter, setDeptFilter] = useState('All');
-  const [projectFilter, setProjectFilter] = useState('All');
-  const [customerFilter, setCustomerFilter] = useState('All');
-  const [supplierFilter, setSupplierFilter] = useState('All');
-  const [employeeFilter, setEmployeeFilter] = useState('All');
-  const [locationFilter, setLocationFilter] = useState('All');
-  
-  // Interactive Custom Plan Builder state
-  const [isCustomPlanModalOpen, setIsCustomPlanModalOpen] = useState(false);
-  const [customPlanState, setCustomPlanState] = useState({
-    userLimit: 50,
-    storageGB: 50,
-    supportLevel: 'Priority Email & Chat',
-    selectedFeatures: ['directory', 'messaging', 'projects']
-  });
+  const canManageBilling = userSession?.orgRole === 'OWNER' || userSession?.orgRole === 'ADMIN';
+  const features = billing?.plan.features ?? userSession?.plan.features ?? [];
 
-  // Save State
-  useEffect(() => {
-    appStore.setItem('rc_subscription_state', JSON.stringify(subState));
-  }, [subState]);
+  const loadBilling = useCallback(() => {
+    api<BillingInfo>('GET', '/billing')
+      .then(setBilling)
+      .catch(err => showToast(errorMessage(err), 'error'));
+  }, [showToast]);
 
   useEffect(() => {
-    appStore.setItem('rc_payment_history', JSON.stringify(paymentHistory));
-  }, [paymentHistory]);
+    loadBilling();
+  }, [loadBilling]);
 
-  useEffect(() => {
-    appStore.setItem('rc_saved_dashboards', JSON.stringify(savedDashboards));
-  }, [savedDashboards]);
+  // ---------- Analytics (calculated from saved records) ----------
 
-  // Handle Subscription Actions
-  const handleUpgradePlan = (planId: string) => {
-    const targetPlan = PLANS_DATA.find(p => p.id === planId);
-    if (!targetPlan) return;
+  const stats = useMemo(() => {
+    const leads = read<any>('realtyconnect_leads');
+    const crm = read<any>('realtyconnect_crm_accounts');
+    const projects = read<any>('realtyconnect_projects');
+    const invoices = read<any>('realtyconnect_finance_billings');
+    const expenses = read<any>('realtyconnect_finance_expenses');
+    const items = read<any>('realtyconnect_inventory_items');
+    const employees = read<any>('rc_hr_employees');
+    const listings = read<any>('realtyconnect_marketplace_listings').filter(l => l.businessId === userSession?.orgId);
+    const rfqs = read<any>('realtyconnect_rfq_list').filter(r => r.companyId === userSession?.orgId);
+    const quotes = read<any>('realtyconnect_quotation_list');
+    const connections = read<any>('rc_net_connections');
+    const procurement = read<any>('realtyconnect_procurement_requests');
 
-    const newSub: OrgSubscriptionState = {
-      ...subState,
-      currentPlanId: planId,
-      status: 'Active',
-      renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const byStatus = (rows: any[], field: string) => rows.reduce<Record<string, number>>((acc, r) => ({ ...acc, [r[field] || 'Unknown']: (acc[r[field] || 'Unknown'] || 0) + 1 }), {});
+    const converted = leads.filter(l => l.status === 'Converted').length;
+    const billed = invoices.filter(i => i.paymentStatus !== 'Draft' && i.paymentStatus !== 'Cancelled');
+    const received = quotes.filter(q => q.companyId !== userSession?.orgId && rfqs.some(r => r.id === q.rfqId));
+
+    return {
+      leads: { total: leads.length, converted, rate: leads.length ? Math.round((converted / leads.length) * 100) : 0, byStatus: byStatus(leads, 'status') },
+      crm: { accounts: crm.length, strategic: crm.filter(a => a.currentStage === 'Strategic Partner').length, valueLakhs: crm.reduce((s, a) => s + (Number(a.businessValue) || 0), 0) },
+      projects: { total: projects.length, active: projects.filter(p => p.status === 'In Progress').length, delayed: projects.filter(p => p.status === 'Delayed').length, avgProgress: projects.length ? Math.round(projects.reduce((s, p) => s + (Number(p.progress) || 0), 0) / projects.length) : 0, budgetLakhs: projects.reduce((s, p) => s + (Number(p.budget) || 0), 0) },
+      finance: {
+        invoiced: billed.reduce((s, i) => s + (Number(i.totalAmount) || 0), 0),
+        collected: billed.reduce((s, i) => s + (Number(i.paidAmount) || 0), 0),
+        overdue: invoices.filter(i => i.paymentStatus === 'Overdue').reduce((s, i) => s + ((Number(i.totalAmount) || 0) - (Number(i.paidAmount) || 0)), 0),
+        expenses: expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0),
+        count: invoices.length
+      },
+      inventory: { items: items.length, low: items.filter(i => i.status === 'Low Stock' || i.status === 'Out of Stock' || (Number(i.availableStock) <= Number(i.minStockLevel))).length },
+      procurement: { requests: procurement.length, open: procurement.filter(p => !['Completed', 'Rejected'].includes(p.status)).length, spend: procurement.filter(p => p.status !== 'Rejected').reduce((s, p) => s + (Number(p.estimatedCost) || 0), 0) },
+      hr: { employees: employees.filter(e => e.status === 'Active').length },
+      network: { connections: connections.filter(c => c.status === 'accepted').length, pending: connections.filter(c => c.status === 'pending_incoming').length },
+      market: { listings: listings.length, rfqs: rfqs.length, bidsReceived: received.length }
     };
+  }, [tab, userSession?.orgId]);
 
-    setSubState(newSub);
+  const Card = ({ title, value, note }: { title: string; value: string | number; note?: string }) => (
+    <div className="p-4 bg-slate-900/40 border border-slate-900 rounded-xl">
+      <div className="text-[11px] text-slate-500">{title}</div>
+      <div className="text-2xl font-bold text-slate-100 mt-1">{value}</div>
+      {note && <div className="text-[11px] text-slate-500 mt-0.5">{note}</div>}
+    </div>
+  );
 
-    // Add invoice entry
-    const newInvoice = {
-      id: `INV-2026-0${paymentHistory.length + 1}`,
-      date: new Date().toISOString().split('T')[0],
-      planName: targetPlan.name,
-      amount: `₹${targetPlan.priceMonthly.toLocaleString()}`,
-      status: 'Paid',
-      method: 'Razorpay UPI'
-    };
-    setPaymentHistory(prev => [newInvoice, ...prev]);
-
-    // Triggers
-    onLogTriggered('SUBSCRIPTION_PLAN_UPGRADED', 'organizations', planId, 'SUCCESS', `Successfully upgraded plan to ${targetPlan.name}. Limits expanded.`);
-    onNotificationTriggered('in_app', userSession?.email || 'operator@realtyconnect.in', `Congratulations! Your subscription has been upgraded to ${targetPlan.name}. Enjoy unlocked features and higher storage limits.`);
-    onNotificationTriggered('email', userSession?.email || 'operator@realtyconnect.in', `Receipt for ${targetPlan.name} Subscription Change`);
-    showToast(`Successfully upgraded to ${targetPlan.name}!`, 'success');
+  const Section = ({ title, feature, children, empty }: { title: string; feature?: string; children: React.ReactNode; empty: boolean }) => {
+    if (feature && !features.includes(feature)) return null;
+    return (
+      <section className="space-y-2">
+        <h3 className="text-sm font-bold text-slate-200">{title}</h3>
+        {empty ? <p className="text-xs text-slate-500 bg-slate-900/30 border border-dashed border-slate-800 rounded-xl p-4">Nothing recorded yet. Figures appear here as you add records in this module.</p> : <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{children}</div>}
+      </section>
+    );
   };
 
-  const handleDowngradePlan = (planId: string) => {
-    const targetPlan = PLANS_DATA.find(p => p.id === planId);
-    if (!targetPlan) return;
+  const maxLead = Math.max(1, ...Object.values(stats.leads.byStatus).map(Number));
 
-    const newSub: OrgSubscriptionState = {
-      ...subState,
-      currentPlanId: planId,
-      status: 'Active',
-      renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    };
+  // ---------- Plans ----------
 
-    setSubState(newSub);
-    onLogTriggered('SUBSCRIPTION_PLAN_DOWNGRADED', 'organizations', planId, 'WARNING', `Plan adjusted to ${targetPlan.name}. Limits reduced.`);
-    onNotificationTriggered('in_app', userSession?.email || 'operator@realtyconnect.in', `Your subscription has been changed to ${targetPlan.name}. Please audit your active users and assets count.`);
-    showToast(`Plan adjusted to ${targetPlan.name}.`, 'info');
+  const choosePlan = async (plan: Plan) => {
+    setBusyPlan(plan.id);
+    try {
+      const result = await api<any>('POST', '/billing/orders', { planId: plan.id, cycle });
+      if (result.activated) {
+        showToast(`You are now on the ${plan.name} plan.`, 'success');
+        onLogTriggered('SUBSCRIPTION_PLAN_CHANGED', 'organizations', plan.id, 'SUCCESS', `Switched to ${plan.name}.`);
+      } else if (result.razorpay) {
+        await payWithRazorpay(result.razorpay, result.payment);
+      } else {
+        showToast(`Invoice ${result.payment.invoiceNo} created. See the instructions below to pay.`, 'success');
+        onNotificationTriggered('in_app', userSession?.email || '', `Invoice ${result.payment.invoiceNo} for the ${plan.name} plan is awaiting payment.`);
+      }
+      loadBilling();
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
+    } finally {
+      setBusyPlan(null);
+    }
   };
 
-  const handleCancelSubscription = () => {
-    setSubState(prev => ({
-      ...prev,
-      status: 'Cancelled'
-    }));
-    onLogTriggered('SUBSCRIPTION_CANCEL_REQUESTED', 'organizations', subState.currentPlanId, 'WARNING', 'User requested subscription cancellation. Access preserved until current cycle end.');
-    onNotificationTriggered('email', userSession?.email || 'operator@realtyconnect.in', `Confirming cancellation of your RealtyConnect Subscription`);
-    showToast('Subscription scheduled for cancellation. We hate to see you go!', 'info');
+  const payWithRazorpay = (order: { orderId: string; keyId: string; amountPaise: number }, payment: PaymentRow) =>
+    new Promise<void>(resolve => {
+      const open = () => {
+        const Razorpay = (window as any).Razorpay;
+        if (!Razorpay) {
+          showToast('The payment window could not be loaded. Check your connection and try again.', 'error');
+          return resolve();
+        }
+        new Razorpay({
+          key: order.keyId,
+          amount: order.amountPaise,
+          currency: 'INR',
+          order_id: order.orderId,
+          name: 'RealtyConnect',
+          description: `${payment.planName} plan (${payment.cycle})`,
+          prefill: { email: userSession?.email },
+          handler: (response: any) => {
+            api('POST', '/billing/razorpay/verify', response)
+              .then(() => showToast('Payment received. Your plan is active.', 'success'))
+              .catch(err => showToast(errorMessage(err), 'error'))
+              .finally(() => {
+                loadBilling();
+                resolve();
+              });
+          },
+          modal: { ondismiss: () => resolve() }
+        }).open();
+      };
+      if ((window as any).Razorpay) return open();
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = open;
+      script.onerror = () => {
+        showToast('The payment window could not be loaded.', 'error');
+        resolve();
+      };
+      document.body.appendChild(script);
+    });
+
+  const cancelOrder = (id: string) =>
+    api('DELETE', `/billing/orders/${encodeURIComponent(id)}`)
+      .then(loadBilling)
+      .catch(err => showToast(errorMessage(err), 'error'));
+
+  const printInvoice = (p: PaymentRow) => {
+    const ok = printReport(
+      `Invoice ${p.invoiceNo}`,
+      [{ key: 'item', label: 'Item' }, { key: 'amount', label: 'Amount' }],
+      [
+        { item: `${p.planName} plan (${p.cycle})`, amount: inr(p.amount) },
+        { item: `GST @ ${Math.round((billing?.gstRate ?? 0.18) * 100)}%`, amount: inr(p.gst) },
+        { item: 'Total', amount: inr(p.total) },
+        { item: 'Status', amount: p.status === 'paid' ? `Paid ${p.paidAt ? new Date(p.paidAt).toLocaleDateString('en-IN') : ''} (${p.method} ${p.reference})` : p.status }
+      ],
+      `Billed to ${userSession?.organizationName} • ${new Date(p.createdAt).toLocaleDateString('en-IN')}`
+    );
+    if (!ok) showToast('Allow pop-ups to print the invoice.', 'error');
   };
 
-  const handleReactivateSubscription = () => {
-    setSubState(prev => ({
-      ...prev,
-      status: 'Active',
-      renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    }));
-    onLogTriggered('SUBSCRIPTION_REACTIVATED', 'organizations', subState.currentPlanId, 'SUCCESS', 'Subscription successfully reactivated by organizational owner.');
-    onNotificationTriggered('in_app', userSession?.email || 'operator@realtyconnect.in', 'Welcome back! Your subscription renewal has been reactivated successfully.');
-    showToast('Subscription successfully reactivated!', 'success');
+  const pending = billing?.payments.find(p => p.status === 'pending');
+
+  // ---------- Exports ----------
+
+  const exportable = DATASETS.filter(d => !d.feature || features.includes(d.feature));
+  const exportDataset = (d: Dataset, kind: 'csv' | 'print') => {
+    const rows = read<Record<string, unknown>>(d.key);
+    if (rows.length === 0) {
+      showToast(`There are no ${d.label.toLowerCase()} to export yet.`, 'info');
+      return;
+    }
+    if (kind === 'csv') downloadCsv(`${d.id}-${new Date().toISOString().slice(0, 10)}`, d.columns, rows);
+    else if (!printReport(`${d.label} - ${userSession?.organizationName}`, d.columns, rows)) showToast('Allow pop-ups to print the report.', 'error');
+    onLogTriggered('REPORT_EXPORTED', 'reports', d.id, 'SUCCESS', `Exported ${rows.length} ${d.label.toLowerCase()} as ${kind === 'csv' ? 'CSV' : 'a printable report'}.`);
   };
 
-  const handleRenewSubscription = () => {
-    const targetPlan = PLANS_DATA.find(p => p.id === subState.currentPlanId) || PLANS_DATA[2];
-    const newSub: OrgSubscriptionState = {
-      ...subState,
-      status: 'Active',
-      renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    };
-    setSubState(newSub);
-
-    // Add invoice
-    const newInvoice = {
-      id: `INV-2026-0${paymentHistory.length + 1}`,
-      date: new Date().toISOString().split('T')[0],
-      planName: `${targetPlan.name} (Renewal)`,
-      amount: `₹${targetPlan.priceMonthly.toLocaleString()}`,
-      status: 'Paid',
-      method: 'Razorpay UPI'
-    };
-    setPaymentHistory(prev => [newInvoice, ...prev]);
-
-    onLogTriggered('SUBSCRIPTION_RENEWED', 'organizations', subState.currentPlanId, 'SUCCESS', `Subscription renewed for next monthly term under plan ${targetPlan.name}.`);
-    onNotificationTriggered('in_app', userSession?.email || 'operator@realtyconnect.in', `Thank you! Your ${targetPlan.name} membership has been renewed.`);
-    showToast('Subscription renewed successfully!', 'success');
+  const meter = (label: string, used: number, limit: number, unit = '') => {
+    const unlimited = limit < 0;
+    const pct = unlimited ? 0 : Math.min(100, Math.round((used / Math.max(1, limit)) * 100));
+    return (
+      <div className="space-y-1" key={label}>
+        <div className="flex justify-between text-xs text-slate-300"><span>{label}</span><span>{used}{unit} / {unlimited ? 'Unlimited' : `${limit}${unit}`}</span></div>
+        <div className="h-2 rounded-full bg-slate-800 overflow-hidden"><div className={`h-full ${pct >= 90 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} /></div>
+      </div>
+    );
   };
 
-  // Check feature permission based on current active plan
-  const activePlan = PLANS_DATA.find(p => p.id === subState.currentPlanId) || PLANS_DATA[2];
-  const hasAccess = (featureKey: string) => {
-    return activePlan.features.includes(featureKey);
-  };
-
-  // Simulated Export Support
-  const handleExport = (type: 'PDF' | 'Excel' | 'CSV' | 'Print') => {
-    onLogTriggered('ANALYTICS_REPORT_EXPORTED', 'reports', 'analytics-center-01', 'SUCCESS', `User executed file compilation and downloaded report in format: ${type}.`);
-    onNotificationTriggered('in_app', userSession?.email || 'operator@realtyconnect.in', `Your custom analytics report has been compiled and downloaded as ${type}.`);
-    showToast(`Compiled document and downloaded ${type} package successfully!`, 'success');
-  };
-
-  // Save Dashboard View
-  const handleSaveDashboardView = () => {
-    const customTitle = `Custom View [${dateFilter}] - ${new Date().toISOString().substr(11, 8)}`;
-    setSavedDashboards(prev => [...prev, customTitle]);
-    onLogTriggered('CUSTOM_DASHBOARD_VIEW_SAVED', 'dashboards', 'custom', 'SUCCESS', `Successfully persisted view: ${customTitle}`);
-    onNotificationTriggered('push', userSession?.email || 'operator@realtyconnect.in', `New dashboard shared/saved: ${customTitle}`);
-    showToast('Current filters and layout configurations saved!', 'success');
-  };
-
-  // Simulated Custom Plan Creation
-  const handleCreateCustomPlan = (e: React.FormEvent) => {
-    e.preventDefault();
-    const calculatedPrice = (customPlanState.userLimit * 200) + (customPlanState.storageGB * 15) + (customPlanState.selectedFeatures.length * 500);
-    
-    // Auto-migrate to custom plan
-    const newSub: OrgSubscriptionState = {
-      ...subState,
-      currentPlanId: 'plan-custom',
-      status: 'Active',
-      renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    };
-    setSubState(newSub);
-
-    // Dynamic Plan injection or replacement
-    const customObj: SubscriptionPlan = {
-      id: 'plan-custom',
-      name: 'Custom Corporate Plan',
-      description: 'SLA-tailored configuration compiled dynamically.',
-      priceMonthly: calculatedPrice,
-      priceYearly: calculatedPrice * 10,
-      trialDuration: '0 Days',
-      features: customPlanState.selectedFeatures,
-      storageLimit: `${customPlanState.storageGB} GB`,
-      userLimit: customPlanState.userLimit,
-      orgLimit: 5,
-      supportLevel: customPlanState.supportLevel,
-      status: 'Custom'
-    };
-
-    // Replace or add to PLANS_DATA in local memory (simulated)
-    const existingIndex = PLANS_DATA.findIndex(p => p.id === 'plan-custom');
-    if (existingIndex > -1) PLANS_DATA[existingIndex] = customObj;
-    else PLANS_DATA.push(customObj);
-
-    setIsCustomPlanModalOpen(false);
-    onLogTriggered('CUSTOM_SUBSCRIPTION_CONSTRUCTED', 'organizations', 'plan-custom', 'SUCCESS', `Tailored SLA subscription created. Price calculated: ₹${calculatedPrice}/month.`);
-    onNotificationTriggered('in_app', userSession?.email || 'operator@realtyconnect.in', `Dynamic Custom Plan has been registered with customized user limits (${customPlanState.userLimit} seats).`);
-    showToast('Custom subscription provisioned & activated!', 'success');
-  };
+  const tabs = [
+    { id: 'analytics', label: 'Analytics', icon: BarChart2 },
+    { id: 'membership', label: 'Plan & billing', icon: CreditCard },
+    { id: 'reports', label: 'Reports & exports', icon: FileText }
+  ] as const;
 
   return (
-    <div className="space-y-6 text-slate-100">
-      
-      {/* 1. TOP HEADER & SEARCH HUB */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
+    <div className="space-y-6 text-xs text-slate-300" id="analytics-billing-root">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-900 pb-4">
         <div>
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-purple-500/10 text-purple-400 rounded-xl border border-purple-500/20">
-              <BarChart2 className="w-5 h-5 animate-pulse" />
+          <h2 className="text-xl font-bold text-slate-100">Analytics, plan and reports</h2>
+          <p className="text-slate-400 mt-1">Figures are calculated from your own records. Current plan: <strong className="text-slate-200">{billing?.plan.name ?? userSession?.plan.name}</strong></p>
+        </div>
+        <div className="flex gap-1 p-1 bg-slate-950 border border-slate-900 rounded-xl">
+          {tabs.map(t => (
+            <button key={t.id} type="button" onClick={() => setTab(t.id)} className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 ${tab === t.id ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}>
+              <t.icon className="w-3.5 h-3.5" />
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      {tab === 'analytics' && (
+        <div className="space-y-6">
+          <Section title="Network" empty={stats.network.connections + stats.network.pending + stats.market.listings + stats.market.rfqs === 0}>
+            <Card title="Connections" value={stats.network.connections} note={`${stats.network.pending} waiting for you`} />
+            <Card title="Marketplace listings" value={stats.market.listings} />
+            <Card title="RFQs you issued" value={stats.market.rfqs} note={`${stats.market.bidsReceived} quotations received`} />
+          </Section>
+          <Section title="Leads and customers" feature="leads" empty={stats.leads.total + stats.crm.accounts === 0}>
+            <Card title="Leads" value={stats.leads.total} note={`${stats.leads.converted} converted`} />
+            <Card title="Conversion rate" value={`${stats.leads.rate}%`} />
+            <Card title="CRM accounts" value={stats.crm.accounts} note={`${stats.crm.strategic} strategic partners`} />
+            <Card title="Business value" value={`₹${stats.crm.valueLakhs.toLocaleString('en-IN')} L`} />
+          </Section>
+          {stats.leads.total > 0 && features.includes('leads') && (
+            <div className="p-4 bg-slate-900/30 border border-slate-900 rounded-xl space-y-2">
+              <h3 className="font-bold text-slate-200">Leads by stage</h3>
+              {Object.entries(stats.leads.byStatus).map(([status, n]) => (
+                <div key={status} className="flex items-center gap-3">
+                  <span className="w-28 text-slate-400">{status}</span>
+                  <div className="flex-1 h-3 rounded bg-slate-800 overflow-hidden"><div className="h-full bg-emerald-500" style={{ width: `${(Number(n) / maxLead) * 100}%` }} /></div>
+                  <span className="w-8 text-right text-slate-300">{n}</span>
+                </div>
+              ))}
             </div>
-            <div>
-              <span className="text-[10px] font-mono text-purple-400 font-bold uppercase tracking-wider bg-purple-500/10 px-2 py-0.5 rounded">
-                Analytics
-              </span>
-              <h2 className="text-xl font-bold text-white font-display mt-0.5">
-                Analytics, BI & Membership Control Hub
-              </h2>
+          )}
+          <Section title="Projects" feature="projects" empty={stats.projects.total === 0}>
+            <Card title="Projects" value={stats.projects.total} note={`${stats.projects.active} in progress`} />
+            <Card title="Delayed" value={stats.projects.delayed} />
+            <Card title="Average progress" value={`${stats.projects.avgProgress}%`} />
+            <Card title="Total budget" value={`₹${stats.projects.budgetLakhs.toLocaleString('en-IN')} L`} />
+          </Section>
+          <Section title="Finance" feature="finance" empty={stats.finance.count + stats.finance.expenses === 0}>
+            <Card title="Invoiced" value={inr(stats.finance.invoiced)} />
+            <Card title="Collected" value={inr(stats.finance.collected)} note={`${inr(stats.finance.invoiced - stats.finance.collected)} outstanding`} />
+            <Card title="Overdue" value={inr(stats.finance.overdue)} />
+            <Card title="Expenses" value={inr(stats.finance.expenses)} />
+          </Section>
+          <Section title="Procurement and inventory" feature="procurement" empty={stats.procurement.requests + stats.inventory.items === 0}>
+            <Card title="Procurement requests" value={stats.procurement.requests} note={`${stats.procurement.open} open`} />
+            <Card title="Planned spend" value={inr(stats.procurement.spend)} />
+            <Card title="Stock items" value={stats.inventory.items} />
+            <Card title="Low or out of stock" value={stats.inventory.low} />
+          </Section>
+          <Section title="People" feature="hr_dms" empty={stats.hr.employees === 0}>
+            <Card title="Active employees" value={stats.hr.employees} />
+          </Section>
+        </div>
+      )}
+
+      {tab === 'membership' && billing && (
+        <div className="space-y-6">
+          {billing.lapsed && (
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>Your paid plan expired{billing.expiresAt ? ` on ${new Date(billing.expiresAt).toLocaleDateString('en-IN')}` : ''}. Your account is on the Free plan until you renew.</span>
+            </div>
+          )}
+
+          <div className="grid lg:grid-cols-3 gap-4">
+            <div className="p-4 bg-slate-900/40 border border-slate-900 rounded-xl lg:col-span-1 space-y-3">
+              <div>
+                <div className="text-[11px] text-slate-500">Current plan</div>
+                <div className="text-xl font-bold text-slate-100">{billing.plan.name}</div>
+                <div className="text-slate-400">{billing.expiresAt ? `Active until ${new Date(billing.expiresAt).toLocaleDateString('en-IN')}` : 'No expiry'}</div>
+              </div>
+              {meter('Users', billing.usage.users, billing.plan.limits.users)}
+              {meter('Storage', billing.usage.storageMb, billing.plan.limits.storageMb, ' MB')}
+              {meter('Marketplace listings', billing.usage.listings, billing.plan.limits.listings)}
+              {meter('RFQs this month', billing.usage.rfqsThisMonth, billing.plan.limits.rfqsPerMonth)}
+            </div>
+
+            <div className="lg:col-span-2 space-y-3">
+              {pending && (
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2" id="pending-invoice">
+                  <div className="flex items-center gap-2 font-bold text-amber-300"><Clock className="w-4 h-4" />Invoice {pending.invoiceNo} is waiting for payment</div>
+                  <p className="text-slate-300">{pending.planName} plan, {pending.cycle}: {inr(pending.amount)} + GST {inr(pending.gst)} = <strong>{inr(pending.total)}</strong></p>
+                  <p className="text-slate-400">{billing.paymentInstructions}</p>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => printInvoice(pending)} className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 flex items-center gap-1.5"><Printer className="w-3.5 h-3.5" />Print invoice</button>
+                    {canManageBilling && <button type="button" onClick={() => cancelOrder(pending.id)} className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">Cancel</button>}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-slate-200">Choose a plan</h3>
+                <div className="flex gap-1 p-1 bg-slate-950 border border-slate-900 rounded-lg">
+                  {(['monthly', 'yearly'] as const).map(c => (
+                    <button key={c} type="button" onClick={() => setCycle(c)} className={`px-3 py-1 rounded-md font-semibold ${cycle === c ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>{c === 'monthly' ? 'Monthly' : 'Yearly'}</button>
+                  ))}
+                </div>
+              </div>
+              {!canManageBilling && <p className="text-slate-500 flex items-center gap-1.5"><Lock className="w-3.5 h-3.5" />Only the company owner or an administrator can change the plan.</p>}
+
+              <div className="grid md:grid-cols-2 gap-3">
+                {billing.plans.map(plan => {
+                  const current = plan.id === billing.subscribedPlanId && !billing.lapsed;
+                  const price = cycle === 'yearly' ? plan.priceYearly : plan.priceMonthly;
+                  return (
+                    <div key={plan.id} className={`p-4 rounded-xl border space-y-2 ${current ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-slate-900 bg-slate-900/30'}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="font-bold text-slate-100">{plan.name}</div>
+                        {current && <span className="text-emerald-400 font-semibold flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" />Current</span>}
+                      </div>
+                      <div className="text-lg font-bold text-slate-100">{price === 0 ? 'Free' : `${inr(price)} / ${cycle === 'yearly' ? 'year' : 'month'}`}</div>
+                      <p className="text-slate-400">{plan.description}</p>
+                      <ul className="text-slate-400 space-y-0.5">
+                        <li>{plan.limits.users} users • {plan.limits.storageMb >= 1024 ? `${plan.limits.storageMb / 1024} GB` : `${plan.limits.storageMb} MB`} storage</li>
+                        <li>{plan.limits.listings < 0 ? 'Unlimited' : plan.limits.listings} listings • {plan.limits.rfqsPerMonth < 0 ? 'unlimited' : plan.limits.rfqsPerMonth} RFQs a month</li>
+                        <li className="text-slate-500">{plan.features.map(f => FEATURE_LABELS[f] ?? f).join(', ')}</li>
+                      </ul>
+                      <button
+                        type="button"
+                        disabled={current || !canManageBilling || busyPlan !== null}
+                        onClick={() => choosePlan(plan)}
+                        className="w-full py-2 rounded-lg font-bold bg-emerald-500 text-slate-950 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {current ? 'Your plan' : busyPlan === plan.id ? 'Please wait...' : plan.priceMonthly === 0 ? 'Switch to Free' : billing.gateway.razorpay ? 'Pay and upgrade' : 'Request invoice'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
-          <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
-            Configure enterprise analytics, track active KPIs, download regulatory Swiss Slate summaries, and govern subscription plans, invoice logs, and feature permissions.
-          </p>
-        </div>
 
-        {/* Global Hub Search */}
-        <div className="flex flex-col sm:flex-row items-stretch gap-2 xl:min-w-[420px]">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
-            <input
-              type="text"
-              placeholder="Search Reports, Plans, Organizations, Customers..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-100 outline-none transition-all placeholder:text-slate-600"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300">
-                <X className="w-3.5 h-3.5" />
-              </button>
+          <div className="space-y-2">
+            <h3 className="font-bold text-slate-200">Invoices</h3>
+            {billing.payments.length === 0 ? (
+              <p className="text-slate-500">No invoices yet.</p>
+            ) : (
+              <div className="overflow-x-auto border border-slate-900 rounded-xl">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-900/60 text-slate-400"><tr>{['Invoice', 'Plan', 'Total', 'Status', 'Date', ''].map(h => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
+                  <tbody>
+                    {billing.payments.map(p => (
+                      <tr key={p.id} className="border-t border-slate-900">
+                        <td className="px-3 py-2 font-mono">{p.invoiceNo}</td>
+                        <td className="px-3 py-2">{p.planName} ({p.cycle})</td>
+                        <td className="px-3 py-2">{inr(p.total)}</td>
+                        <td className="px-3 py-2 capitalize">{p.status}</td>
+                        <td className="px-3 py-2">{new Date(p.createdAt).toLocaleDateString('en-IN')}</td>
+                        <td className="px-3 py-2"><button type="button" onClick={() => printInvoice(p)} className="text-emerald-400 hover:underline">Print</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
-          
-          <button 
-            onClick={() => {
-              setSearchQuery('');
-              setDateFilter('Last 30 Days');
-              setDeptFilter('All');
-              setProjectFilter('All');
-              showToast('Filters reset to enterprise default', 'info');
-            }}
-            className="bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Reset</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 2. SUB NAVIGATION TABS */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-2 rounded-xl">
-        <div className="flex flex-wrap items-center gap-1">
-          <button
-            onClick={() => setActiveTab('analytics')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer flex items-center gap-2 ${
-              activeTab === 'analytics'
-                ? 'bg-purple-600 text-white font-bold shadow-md'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
-            }`}
-          >
-            <BarChart2 className="w-3.5 h-3.5" />
-            <span>Part 1: Analytics & BI Center</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('membership')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer flex items-center gap-2 ${
-              activeTab === 'membership'
-                ? 'bg-purple-600 text-white font-bold shadow-md'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
-            }`}
-          >
-            <CreditCard className="w-3.5 h-3.5" />
-            <span>Part 2: Membership & Subscriptions</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('reports')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer flex items-center gap-2 ${
-              activeTab === 'reports'
-                ? 'bg-purple-600 text-white font-bold shadow-md'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>Executive Report Registry</span>
-          </button>
-        </div>
-
-        {/* Global Export actions */}
-        <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
-          <button onClick={() => handleExport('PDF')} className="p-1.5 hover:bg-slate-850 rounded text-slate-400 hover:text-emerald-400 transition-all cursor-pointer" title="Export PDF">
-            <FileText className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={() => handleExport('Excel')} className="p-1.5 hover:bg-slate-850 rounded text-slate-400 hover:text-emerald-400 transition-all cursor-pointer" title="Export Excel">
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={() => handleExport('CSV')} className="p-1.5 hover:bg-slate-850 rounded text-slate-400 hover:text-emerald-400 transition-all cursor-pointer" title="Export CSV">
-            <Download className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={() => handleExport('Print')} className="p-1.5 hover:bg-slate-850 rounded text-slate-400 hover:text-emerald-400 transition-all cursor-pointer" title="Print Dashboard">
-            <Printer className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* 3. MULTI-LEVEL FILTERS (BAR) */}
-      <div className="bg-slate-900/60 border border-slate-850 p-4 rounded-xl space-y-3">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-          <div className="flex items-center gap-1.5 text-xs text-slate-300 font-semibold uppercase tracking-wider">
-            <SlidersHorizontal className="w-3.5 h-3.5 text-purple-400" />
-            <span>Interactive Multi-Criteria Filters</span>
-          </div>
-          <span className="text-[10px] font-mono text-slate-500">Filters dynamically compute stats below</span>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {/* Date range filter */}
-          <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">Date Period</label>
-            <select 
-              value={dateFilter} 
-              onChange={(e) => {
-                setDateFilter(e.target.value);
-                onLogTriggered('ANALYTICS_FILTER_CHANGED', 'dates', e.target.value, 'SUCCESS', `Date interval updated to ${e.target.value}`);
-              }}
-              className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-lg p-1.5 text-xs text-slate-200 outline-none"
-            >
-              <option>Today</option>
-              <option>Last 7 Days</option>
-              <option>Last 30 Days</option>
-              <option>Current Quarter (Q2)</option>
-              <option>Financial Year 2026</option>
-            </select>
-          </div>
-
-          {/* Department filter */}
-          <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">Department</label>
-            <select 
-              value={deptFilter} 
-              onChange={(e) => {
-                setDeptFilter(e.target.value);
-                onLogTriggered('ANALYTICS_FILTER_CHANGED', 'departments', e.target.value, 'SUCCESS', `Department filter shifted to ${e.target.value}`);
-              }}
-              className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-lg p-1.5 text-xs text-slate-200 outline-none"
-            >
-              <option>All</option>
-              <option>Engineering</option>
-              <option>Acquisitions & Legal</option>
-              <option>Procurement & Logistics</option>
-              <option>Sales & Brokerage</option>
-              <option>Audit & Finance</option>
-            </select>
-          </div>
-
-          {/* Project Roster Filter */}
-          <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">Project Target</label>
-            <select 
-              value={projectFilter} 
-              onChange={(e) => {
-                setProjectFilter(e.target.value);
-                onLogTriggered('ANALYTICS_FILTER_CHANGED', 'projects', e.target.value, 'SUCCESS', `Project context changed to ${e.target.value}`);
-              }}
-              className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-lg p-1.5 text-xs text-slate-200 outline-none"
-            >
-              <option>All</option>
-              <option>DLF CyberPark Phase II</option>
-              <option>Metro Line Phase 3 Substructure</option>
-              <option>Godrej Woods Premium Tower</option>
-              <option>Prestige High-Rise Estate</option>
-            </select>
-          </div>
-
-          {/* Location / Geography */}
-          <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">Geographic Region</label>
-            <select 
-              value={locationFilter} 
-              onChange={(e) => {
-                setLocationFilter(e.target.value);
-                onLogTriggered('ANALYTICS_FILTER_CHANGED', 'locations', e.target.value, 'SUCCESS', `Geographical target set to ${e.target.value}`);
-              }}
-              className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-lg p-1.5 text-xs text-slate-200 outline-none"
-            >
-              <option>All</option>
-              <option>Delhi NCR (Gurugram)</option>
-              <option>Mumbai Metropolitan Region (MMR)</option>
-              <option>Bengaluru Tech Corridor</option>
-              <option>Pune IT Park Hub</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Additional Collateral Filters */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-slate-850/40">
-          <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">B2B Client / Customer</label>
-            <select value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 outline-none">
-              <option>All</option>
-              <option>Apex Builders Ltd</option>
-              <option>Adani Infra Corp</option>
-              <option>L&T Heavy Civil</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">Approved Supplier</label>
-            <select value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 outline-none">
-              <option>All</option>
-              <option>Tata Steel Ltd</option>
-              <option>Ultratech Cement Co</option>
-              <option>Jindal Iron Works</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-[10px] text-slate-400 font-mono mb-1">Site Supervisor / EE</label>
-            <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 outline-none">
-              <option>All</option>
-              <option>Vikram Rathore (PM)</option>
-              <option>Ananya Sen (Compliance)</option>
-              <option>Rajesh Verma (Procurement)</option>
-            </select>
-          </div>
-          <div className="flex items-end justify-end">
-            <button
-              onClick={() => {
-                setDeptFilter('All');
-                setProjectFilter('All');
-                setCustomerFilter('All');
-                setSupplierFilter('All');
-                setEmployeeFilter('All');
-                setLocationFilter('All');
-                showToast('Secondary filters reset successfully!', 'info');
-              }}
-              className="w-full text-center py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-400 hover:text-white rounded-lg text-[10px] font-mono tracking-wider font-bold transition-all cursor-pointer"
-            >
-              Clear Secondary Filters
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. MAIN CONTENT AREA */}
-      {activeTab === 'analytics' && (
-        <div className="space-y-6">
-          
-          {/* Sub Navigation: Executive, KPIs, Insights, Custom dashboards */}
-          <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setAnalyticsViewType('executive')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  analyticsViewType === 'executive'
-                    ? 'bg-purple-500/10 border border-purple-500 text-white font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Executive Executive Overview
-              </button>
-              <button
-                onClick={() => setAnalyticsViewType('kpis')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  analyticsViewType === 'kpis'
-                    ? 'bg-purple-500/10 border border-purple-500 text-white font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                KPI Analytics Metrics
-              </button>
-              <button
-                onClick={() => setAnalyticsViewType('insights')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  analyticsViewType === 'insights'
-                    ? 'bg-purple-500/10 border border-purple-500 text-white font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Business Insights Ranking
-              </button>
-            </div>
-
-            {/* Custom Saved Dashboard Toggle */}
-            <div className="flex items-center gap-2 bg-slate-950 px-2 py-1.5 rounded-xl border border-slate-800">
-              <span className="text-[10px] font-mono text-slate-500 uppercase font-bold">Saved View:</span>
-              <select
-                value={customDashboardSelection}
-                onChange={(e: any) => {
-                  setCustomDashboardSelection(e.target.value);
-                  showToast(`Swapped layout to: ${e.target.value} Dashboard Perspective`, 'success');
-                }}
-                className="bg-transparent border-none text-xs text-purple-400 font-bold outline-none cursor-pointer"
-              >
-                <option value="Executive">Executive Portfolio (Default)</option>
-                <option value="Personal">My Personal Dashboard</option>
-                <option value="Role-Based">Role-Based ({userSession?.role || 'Guest'})</option>
-                <option value="Department">Departmental Core (Audit)</option>
-              </select>
-              <button
-                onClick={handleSaveDashboardView}
-                className="ml-1 px-2 py-0.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded text-[9px] font-mono transition-all cursor-pointer"
-              >
-                Save New View
-              </button>
-            </div>
-          </div>
-
-          {/* A. EXECUTIVE DASHBOARD SUB-VIEW */}
-          {analyticsViewType === 'executive' && (
-            <div className="space-y-6">
-              
-              {/* Business Health & Core Metrics Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                
-                {/* Gauge: Business Health Score */}
-                <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider">Business Health Rating</span>
-                    <span className="text-[10px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 px-2 py-0.5 rounded font-bold">RERA Compliant</span>
-                  </div>
-                  
-                  <div className="py-6 flex flex-col items-center justify-center">
-                    <div className="relative w-32 h-32 flex items-center justify-center">
-                      {/* Outer simulated progress ring */}
-                      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                        <circle cx="50" cy="50" r="42" stroke="#1e293b" strokeWidth="8" fill="transparent" />
-                        <circle cx="50" cy="50" r="42" stroke="#10b981" strokeWidth="8" fill="transparent" strokeDasharray="264" strokeDashoffset="31" />
-                      </svg>
-                      <div className="absolute flex flex-col items-center">
-                        <span className="text-3xl font-extrabold text-white font-display">92.4</span>
-                        <span className="text-[9px] font-mono text-slate-500">Out of 100</span>
-                      </div>
-                    </div>
-                    <div className="text-center mt-3">
-                      <span className="text-xs text-emerald-400 font-bold flex items-center gap-1">
-                        <TrendingUp className="w-3.5 h-3.5" /> Excellent Health Trend (+4.2%)
-                      </span>
-                      <p className="text-[10px] text-slate-400 mt-1">Weighted score across leads, compliance, and material deliveries.</p>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-slate-800/60 pt-3 text-[11px] text-slate-400 flex items-center justify-between">
-                    <span>Audit Status: Passed</span>
-                    <span className="font-mono text-[9px] text-slate-500">Next Update: 24 Hrs</span>
-                  </div>
-                </div>
-
-                {/* Card: Revenue Overview */}
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider">Revenue Overview</span>
-                    <span className="text-[10px] bg-indigo-500/15 text-indigo-400 px-2 py-0.5 rounded font-mono">Q2 Targets</span>
-                  </div>
-
-                  <div className="space-y-4 py-4">
-                    <div>
-                      <div className="flex justify-between items-baseline">
-                        <span className="text-2xl font-extrabold text-white">₹2,48,50,000</span>
-                        <span className="text-xs font-mono text-emerald-400 font-semibold">+18.5% Y-o-Y</span>
-                      </div>
-                      <p className="text-[10px] text-slate-500">Gross revenue booked across B2B contracts & subscription fees.</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div>
-                        <div className="flex justify-between text-[11px] text-slate-400">
-                          <span>Recurring Subscription Income</span>
-                          <span className="font-semibold text-slate-200">₹34.5L/mo</span>
-                        </div>
-                        <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden mt-1">
-                          <div className="bg-purple-500 h-full rounded-full" style={{ width: '74%' }} />
-                        </div>
-                      </div>
-                      <div>
-                        <div className="flex justify-between text-[11px] text-slate-400">
-                          <span>Escrow Milestone Disbursals</span>
-                          <span className="font-semibold text-slate-200">₹2.14 Cr</span>
-                        </div>
-                        <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden mt-1">
-                          <div className="bg-emerald-500 h-full rounded-full" style={{ width: '85%' }} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-slate-800/60 pt-3 text-[11px] text-slate-400 flex items-center justify-between">
-                    <span>Average Deal Size: ₹14.8L</span>
-                    <button onClick={() => setActiveViewMode('finance')} className="text-purple-400 hover:text-purple-300 font-bold flex items-center gap-0.5">
-                      Open Finance <ArrowUpRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Card: Sales Pipeline Stage analysis */}
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider">Sales Pipeline Stages</span>
-                    <span className="text-[10px] text-slate-500 font-mono">142 Contracts</span>
-                  </div>
-
-                  <div className="space-y-2.5 py-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-400">1. Leads Identified</span>
-                      <span className="font-mono font-bold text-slate-200">42 (Value: ₹62L)</span>
-                    </div>
-                    <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden">
-                      <div className="bg-blue-500 h-full rounded-full" style={{ width: '100%' }} />
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-400">2. Active RFQ Bids</span>
-                      <span className="font-mono font-bold text-slate-200">31 (Value: ₹84L)</span>
-                    </div>
-                    <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden">
-                      <div className="bg-amber-500 h-full rounded-full" style={{ width: '78%' }} />
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-400">3. Proposals Under Negotiation</span>
-                      <span className="font-mono font-bold text-slate-200">18 (Value: ₹1.4 Cr)</span>
-                    </div>
-                    <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden">
-                      <div className="bg-indigo-500 h-full rounded-full" style={{ width: '58%' }} />
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-400">4. Contracts Disbursed</span>
-                      <span className="font-mono font-bold text-slate-200">11 (Value: ₹2.1 Cr)</span>
-                    </div>
-                    <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden">
-                      <div className="bg-emerald-500 h-full rounded-full" style={{ width: '38%' }} />
-                    </div>
-                  </div>
-
-                  <div className="border-t border-slate-800/60 pt-2 text-[11px] text-slate-400 flex items-center justify-between">
-                    <span>Average Win Rate: 34.4%</span>
-                    <span className="font-mono text-emerald-400">+1.5% this month</span>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Grid 2: Horizontal Metric Blocks for multi-module integration */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                
-                {/* Block 1: Lead Conversion */}
-                <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 font-mono">Lead Conversion</div>
-                  <div className="text-2xl font-extrabold text-white mt-1">34.4%</div>
-                  <div className="flex justify-between items-center text-[10px] text-emerald-400 font-semibold mt-1.5">
-                    <span>Target: 30% met</span>
-                    <span>+2.1%</span>
-                  </div>
-                </div>
-
-                {/* Block 2: Project Progress */}
-                <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 font-mono">Project Portfolio</div>
-                  <div className="text-2xl font-extrabold text-white mt-1">88% <span className="text-xs font-normal text-slate-400">Milestones</span></div>
-                  <div className="flex justify-between items-center text-[10px] text-emerald-400 font-semibold mt-1.5">
-                    <span>On-Schedule</span>
-                    <span className="text-amber-400 font-mono">1 Delay Alert</span>
-                  </div>
-                </div>
-
-                {/* Block 3: Procurement Summary */}
-                <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 font-mono">Procurement Budget</div>
-                  <div className="text-2xl font-extrabold text-white mt-1">84% <span className="text-xs font-normal text-slate-400">Utilized</span></div>
-                  <div className="flex justify-between items-center text-[10px] text-emerald-400 font-semibold mt-1.5">
-                    <span>Save: ₹11.6L (12.4%)</span>
-                    <span className="text-slate-400 font-mono">48 Vendors</span>
-                  </div>
-                </div>
-
-                {/* Block 4: Inventory & Stock */}
-                <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 font-mono">Inventory Valuation</div>
-                  <div className="text-2xl font-extrabold text-white mt-1">₹58.6 Lakhs</div>
-                  <div className="flex justify-between items-center text-[10px] text-amber-400 font-semibold mt-1.5">
-                    <span>2 Stockout Warnings</span>
-                    <span className="text-emerald-400 font-mono">1,450 Items</span>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Grid 3: Human & Organization Summary Block */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* Employee summary */}
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-                  <h4 className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider mb-3">Employee & Labor Allocation</h4>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-2.5 bg-slate-950 rounded-lg">
-                      <span className="text-xs font-semibold text-slate-300">Total Active Workforce</span>
-                      <span className="text-xs font-mono font-bold text-white">124 Headcount</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 bg-slate-950 rounded-lg">
-                      <span className="text-xs font-semibold text-slate-300">Roster Attendance Compliance</span>
-                      <span className="text-xs font-mono font-bold text-emerald-400">98.2%</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 bg-slate-950 rounded-lg">
-                      <span className="text-xs font-semibold text-slate-300">Average Performance Rating</span>
-                      <span className="text-xs font-mono font-bold text-purple-400">4.8 / 5.0</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Customer Growth */}
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-                  <h4 className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider mb-3">B2B Network Customer Growth</h4>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-2.5 bg-slate-950 rounded-lg">
-                      <span className="text-xs font-semibold text-slate-300">New Registered Entities (Month)</span>
-                      <span className="text-xs font-mono font-bold text-emerald-400">+14 Companies</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 bg-slate-950 rounded-lg">
-                      <span className="text-xs font-semibold text-slate-300">Total Connected B2B Members</span>
-                      <span className="text-xs font-mono font-bold text-white">412 Members</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 bg-slate-950 rounded-lg">
-                      <span className="text-xs font-semibold text-slate-300">Active RFP Interaction Rate</span>
-                      <span className="text-xs font-mono font-bold text-indigo-400">78.5% Engagement</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Organization Entitlements / Performance limits */}
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-                  <h4 className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider mb-3">Organization Performance & Entitlement Limits</h4>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1">
-                        <span>User Seat Utilization</span>
-                        <span className="font-semibold text-white">{subState.activeUsersCount} / {activePlan.userLimit} Seats</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                        <div className="bg-purple-500 h-full rounded-full" style={{ width: `${(subState.activeUsersCount / activePlan.userLimit) * 100}%` }} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1">
-                        <span>Organization Limit</span>
-                        <span className="font-semibold text-white">{subState.organizationCount} / {activePlan.orgLimit} Units</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                        <div className="bg-blue-500 h-full rounded-full" style={{ width: `${(subState.organizationCount / activePlan.orgLimit) * 100}%` }} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1">
-                        <span>Encrypted DMS Storage Usage</span>
-                        <span className="font-semibold text-white">4.2 GB / {activePlan.storageLimit}</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                        <div className="bg-emerald-500 h-full rounded-full" style={{ width: '42%' }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Interactive Trend Analysis / Comparison charts (Part of Analytics Center) */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3 mb-4">
-                  <div>
-                    <h4 className="text-sm font-bold text-white font-display flex items-center gap-2">
-                      Interactive Analytics Center & Trend Analysis
-                    </h4>
-                    <p className="text-xs text-slate-400">Visual comparison of monthly operational costs vs. sales pipeline revenue.</p>
-                  </div>
-                  <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
-                    <span className="text-[10px] text-slate-400 px-2 font-mono">Q2 Progress</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  </div>
-                </div>
-
-                {/* Simulated Chart with dynamic tooltips on Hover */}
-                <div className="py-2">
-                  <div className="grid grid-cols-6 gap-3 items-end h-44 border-b border-slate-800 pb-2 relative">
-                    
-                    {/* Horizontal helper lines */}
-                    <div className="absolute inset-x-0 top-1/4 border-b border-slate-800/40 pointer-events-none" />
-                    <div className="absolute inset-x-0 top-2/4 border-b border-slate-800/40 pointer-events-none" />
-                    <div className="absolute inset-x-0 top-3/4 border-b border-slate-800/40 pointer-events-none" />
-
-                    {/* Jan bar */}
-                    <div className="flex flex-col items-center h-full justify-end group cursor-pointer">
-                      <div className="w-full flex gap-1 items-end h-full px-2">
-                        <div className="flex-1 bg-purple-500/85 hover:bg-purple-400 transition-all rounded-t" style={{ height: '35%' }} title="Sales: ₹12 Lakhs" />
-                        <div className="flex-1 bg-emerald-500/85 hover:bg-emerald-400 transition-all rounded-t" style={{ height: '25%' }} title="Expense: ₹8 Lakhs" />
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono mt-1.5">Jan</span>
-                    </div>
-
-                    {/* Feb bar */}
-                    <div className="flex flex-col items-center h-full justify-end group cursor-pointer">
-                      <div className="w-full flex gap-1 items-end h-full px-2">
-                        <div className="flex-1 bg-purple-500/85 hover:bg-purple-400 transition-all rounded-t" style={{ height: '48%' }} title="Sales: ₹16 Lakhs" />
-                        <div className="flex-1 bg-emerald-500/85 hover:bg-emerald-400 transition-all rounded-t" style={{ height: '30%' }} title="Expense: ₹10 Lakhs" />
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono mt-1.5">Feb</span>
-                    </div>
-
-                    {/* Mar bar */}
-                    <div className="flex flex-col items-center h-full justify-end group cursor-pointer">
-                      <div className="w-full flex gap-1 items-end h-full px-2">
-                        <div className="flex-1 bg-purple-500/85 hover:bg-purple-400 transition-all rounded-t" style={{ height: '62%' }} title="Sales: ₹21 Lakhs" />
-                        <div className="flex-1 bg-emerald-500/85 hover:bg-emerald-400 transition-all rounded-t" style={{ height: '34%' }} title="Expense: ₹12 Lakhs" />
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono mt-1.5">Mar</span>
-                    </div>
-
-                    {/* Apr bar */}
-                    <div className="flex flex-col items-center h-full justify-end group cursor-pointer">
-                      <div className="w-full flex gap-1 items-end h-full px-2">
-                        <div className="flex-1 bg-purple-500/85 hover:bg-purple-400 transition-all rounded-t" style={{ height: '74%' }} title="Sales: ₹25 Lakhs" />
-                        <div className="flex-1 bg-emerald-500/85 hover:bg-emerald-400 transition-all rounded-t" style={{ height: '42%' }} title="Expense: ₹14 Lakhs" />
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono mt-1.5">Apr</span>
-                    </div>
-
-                    {/* May bar */}
-                    <div className="flex flex-col items-center h-full justify-end group cursor-pointer">
-                      <div className="w-full flex gap-1 items-end h-full px-2">
-                        <div className="flex-1 bg-purple-500/85 hover:bg-purple-400 transition-all rounded-t" style={{ height: '88%' }} title="Sales: ₹30 Lakhs" />
-                        <div className="flex-1 bg-emerald-500/85 hover:bg-emerald-400 transition-all rounded-t" style={{ height: '50%' }} title="Expense: ₹16 Lakhs" />
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono mt-1.5">May (Actual)</span>
-                    </div>
-
-                    {/* Jun bar */}
-                    <div className="flex flex-col items-center h-full justify-end group cursor-pointer">
-                      <div className="w-full flex gap-1 items-end h-full px-2">
-                        <div className="flex-1 bg-purple-500/85 hover:bg-purple-400 transition-all rounded-t" style={{ height: '94%' }} title="Sales: ₹34 Lakhs" />
-                        <div className="flex-1 bg-emerald-500/85 hover:bg-emerald-400 transition-all rounded-t" style={{ height: '52%' }} title="Expense: ₹18 Lakhs" />
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono mt-1.5">Jun (Forecast)</span>
-                    </div>
-
-                  </div>
-
-                  {/* Chart Legend & Indicators */}
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mt-3 text-xs">
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-3 h-3 bg-purple-500 rounded" />
-                        <span className="text-slate-400">Monthly Deal Volume (B2B Pipelines)</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-3 h-3 bg-emerald-500 rounded" />
-                        <span className="text-slate-400">Milestone Expenses Outflow</span>
-                      </div>
-                    </div>
-                    <div className="text-[10px] font-mono text-slate-500">
-                      * Hover bars for exact calculations. Dynamic forecasting placeholder activated.
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          )}
-
-          {/* B. KPI DASHBOARD METRICS */}
-          {analyticsViewType === 'kpis' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              
-              {/* Box 1: Lead & Sales KPIs */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-                <div className="border-b border-slate-800 pb-2">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    <span className="w-1.5 h-3 bg-purple-500 rounded" />
-                    Lead & Sales KPIs
-                  </h3>
-                </div>
-                <div className="space-y-3">
-                  <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">Average Conversion Time</div>
-                    <div className="text-lg font-bold text-white">4.2 Days</div>
-                    <p className="text-[10px] text-slate-400">Time from directory lead capture to active RFQ proposal.</p>
-                  </div>
-                  <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">Acquisition Cost (CAC)</div>
-                    <div className="text-lg font-bold text-emerald-400">₹450 / Lead</div>
-                    <p className="text-[10px] text-slate-400">Average platform cost based on subscription level metrics.</p>
-                  </div>
-                  <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">Win Rate by Pipeline</div>
-                    <div className="text-lg font-bold text-white">34.4%</div>
-                    <p className="text-[10px] text-slate-400">Quotations approved vs total proposals submitted.</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Box 2: Project, Procurement & Inventory KPIs */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-                <div className="border-b border-slate-800 pb-2">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    <span className="w-1.5 h-3 bg-blue-500 rounded" />
-                    Operations & Procurement KPIs
-                  </h3>
-                </div>
-                <div className="space-y-3">
-                  <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">Supplier Compliance Ratio</div>
-                    <div className="text-lg font-bold text-emerald-400">97.8% On-Time</div>
-                    <p className="text-[10px] text-slate-400">Raw materials delivery conforming to contract SLAs.</p>
-                  </div>
-                  <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">RFQ Savings Index</div>
-                    <div className="text-lg font-bold text-white">12.4% Average</div>
-                    <p className="text-[10px] text-slate-400">Savings calculated compared to baseline offline market rates.</p>
-                  </div>
-                  <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">Stockout Frequency</div>
-                    <div className="text-lg font-bold text-amber-400">0.4% / Month</div>
-                    <p className="text-[10px] text-slate-400">Critical items running out before milestone delivery cycles.</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Box 3: Network & Subscription KPIs */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-                <div className="border-b border-slate-800 pb-2">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    <span className="w-1.5 h-3 bg-emerald-500 rounded" />
-                    Marketplace & Subscription KPIs
-                  </h3>
-                </div>
-                <div className="space-y-3">
-                  <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">Monthly Recurring Revenue (MRR)</div>
-                    <div className="text-lg font-bold text-purple-400">₹34.5 Lakhs</div>
-                    <p className="text-[10px] text-slate-400">Active recurring membership license billing value.</p>
-                  </div>
-                  <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">User Retention (Churn)</div>
-                    <div className="text-lg font-bold text-emerald-400">0.8% Churn</div>
-                    <p className="text-[10px] text-slate-400">Low turnover rate indicating extreme value in active sprints.</p>
-                  </div>
-                  <div className="p-3 bg-slate-950 rounded-xl space-y-1">
-                    <div className="text-[10px] text-slate-500 font-mono">Average ARPU (Organization)</div>
-                    <div className="text-lg font-bold text-white">₹16,400 / Mo</div>
-                    <p className="text-[10px] text-slate-400">Weighted average transaction spend per active enterprise unit.</p>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          )}
-
-          {/* C. BUSINESS INSIGHTS SCREEN */}
-          {analyticsViewType === 'insights' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              
-              {/* Column 1: Performance Ranking Lists */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-                <h3 className="text-sm font-bold text-white font-display">Top Commercial Rankings</h3>
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">Top Performing Real Estate Projects</span>
-                    <div className="space-y-2 mt-1">
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">1. DLF CyberPark Phase II</span>
-                        <span className="font-bold text-emerald-400">96.2% Performance</span>
-                      </div>
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">2. Prestige High-Rise Towers</span>
-                        <span className="font-bold text-emerald-400">91.4% Performance</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">Top Revenue-Contributing Customers</span>
-                    <div className="space-y-2 mt-1">
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">1. Apex Builders Ltd</span>
-                        <span className="font-bold text-white">₹84 Lakhs Volume</span>
-                      </div>
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">2. Adani Infrastructure</span>
-                        <span className="font-bold text-white">₹62 Lakhs Volume</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">Top Compliant Suppliers</span>
-                    <div className="space-y-2 mt-1">
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">1. Tata Steel Ltd (Tenders)</span>
-                        <span className="font-bold text-emerald-400">99.2% Rating</span>
-                      </div>
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">2. Ultratech Cement Co</span>
-                        <span className="font-bold text-emerald-400">97.4% Rating</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Column 2: Operational Highlights */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-                <h3 className="text-sm font-bold text-white font-display">Operational Highlights</h3>
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">Best Selling Materials Categories</span>
-                    <div className="space-y-2 mt-1">
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">1. Fe550 Reinforcement Bars</span>
-                        <span className="font-bold text-purple-400">Fastest Growing (+22%)</span>
-                      </div>
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">2. PPC Grade 53 Portland Cement</span>
-                        <span className="font-bold text-purple-400">High Volume (+14%)</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">Most Active Employees (Sandbox Task Credits)</span>
-                    <div className="space-y-2 mt-1">
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">1. Vikram Rathore (Project Manager)</span>
-                        <span className="font-mono text-slate-300">32 Submittals</span>
-                      </div>
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">2. Rajesh Verma (Lead Buyer)</span>
-                        <span className="font-mono text-slate-300">28 Bids Completed</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">Primary Organizational Revenue Source</span>
-                    <div className="space-y-2 mt-1">
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">1. Escrow Project Milestone Cut</span>
-                        <span className="font-bold text-white">65% Allocation</span>
-                      </div>
-                      <div className="flex justify-between text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-850">
-                        <span className="text-slate-200">2. SaaS B2B Licenses (MRR)</span>
-                        <span className="font-bold text-white">35% Allocation</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          )}
-
         </div>
       )}
 
-      {/* activeTab === 'membership' */}
-      {activeTab === 'membership' && (
-        <div className="space-y-6">
-          
-          {/* Active Subscription State overview */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 grid grid-cols-1 lg:grid-cols-3 gap-6 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
-            
-            {/* Active profile and status */}
-            <div className="space-y-3">
-              <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider bg-slate-950 border border-slate-800 px-2.5 py-1 rounded">
-                Active Organization Profile
-              </span>
-              <div className="pt-2">
-                <h3 className="text-lg font-bold text-white font-display">Apex Developers Ltd</h3>
-                <p className="text-xs text-slate-400 mt-1">Primary Tenant Segment: Acquisition, Engineering & Compliance</p>
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-xs text-slate-400 flex justify-between">
-                  <span>Current Subscription Plan:</span>
-                  <span className="font-bold text-purple-400 uppercase">{activePlan.name}</span>
-                </div>
-                <div className="text-xs text-slate-400 flex justify-between">
-                  <span>Subscription Status:</span>
-                  <span className={`font-bold uppercase ${
-                    subState.status === 'Active' ? 'text-emerald-400' : 'text-amber-400 animate-pulse'
-                  }`}>{subState.status}</span>
-                </div>
-                <div className="text-xs text-slate-400 flex justify-between">
-                  <span>Next Renewal Invoice:</span>
-                  <span className="font-mono text-slate-300 font-bold">{subState.renewalDate}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Current Limit Gauges */}
-            <div className="space-y-3">
-              <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Usage & Subscriptions Analytics</span>
-              
-              <div className="space-y-2 pt-1">
-                <div>
-                  <div className="flex justify-between text-xs text-slate-400 mb-0.5">
-                    <span>Active User Seats</span>
-                    <span className="font-mono text-slate-200">{subState.activeUsersCount} / {activePlan.userLimit} Seats</span>
+      {tab === 'reports' && (
+        <div className="space-y-3">
+          <p className="text-slate-400">Download your records as a CSV file (opens in Excel) or open a printable report that you can save as PDF.</p>
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {exportable.map(d => {
+              const count = read(d.key).length;
+              return (
+                <div key={d.id} className="p-4 bg-slate-900/30 border border-slate-900 rounded-xl flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-bold text-slate-200">{d.label}</div>
+                    <div className="text-slate-500">{count} record{count === 1 ? '' : 's'}</div>
                   </div>
-                  <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                    <div className="bg-purple-500 h-full rounded-full" style={{ width: `${(subState.activeUsersCount / activePlan.userLimit) * 100}%` }} />
+                  <div className="flex gap-1.5">
+                    <button type="button" onClick={() => exportDataset(d, 'csv')} className="px-2.5 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-semibold flex items-center gap-1"><Download className="w-3.5 h-3.5" />CSV</button>
+                    <button type="button" onClick={() => exportDataset(d, 'print')} className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 flex items-center gap-1"><Printer className="w-3.5 h-3.5" />PDF</button>
                   </div>
                 </div>
-
-                <div>
-                  <div className="flex justify-between text-xs text-slate-400 mb-0.5">
-                    <span>DMS Storage Used</span>
-                    <span className="font-mono text-slate-200">4.2 GB / {activePlan.storageLimit}</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                    <div className="bg-emerald-500 h-full rounded-full" style={{ width: '42%' }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs text-slate-400 mb-0.5">
-                    <span>Registered Business Sites</span>
-                    <span className="font-mono text-slate-200">{subState.organizationCount} / {activePlan.orgLimit} Locations</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                    <div className="bg-blue-500 h-full rounded-full" style={{ width: `${(subState.organizationCount / activePlan.orgLimit) * 100}%` }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Subscription Actions Panel */}
-            <div className="bg-slate-950/80 border border-slate-850 rounded-xl p-4 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-mono text-slate-500 uppercase font-bold">Mutate Subscription Status</span>
-                <p className="text-[10.5px] text-slate-400 mt-1 leading-relaxed">
-                  Safely trigger plan actions. Pricing and active compliance policies are adapted in local memory logs.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 mt-3">
-                {subState.status === 'Active' ? (
-                  <>
-                    <button
-                      onClick={handleRenewSubscription}
-                      className="text-center py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg text-xs transition-all cursor-pointer"
-                    >
-                      Renew Term
-                    </button>
-                    <button
-                      onClick={handleCancelSubscription}
-                      className="text-center py-2 bg-slate-900 hover:bg-red-950/20 border border-slate-800 text-slate-400 hover:text-red-400 rounded-lg text-xs transition-all cursor-pointer"
-                    >
-                      Cancel Plan
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={handleReactivateSubscription}
-                    className="col-span-2 text-center py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-all cursor-pointer"
-                  >
-                    Reactivate Active Status
-                  </button>
-                )}
-              </div>
-            </div>
-
-          </div>
-
-          {/* Feature Access Matrix Based on Current Active Plan */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-            <h3 className="text-sm font-bold text-white mb-2 font-display">Active Subscriptions Feature Gate Matrix</h3>
-            <p className="text-xs text-slate-400 mb-4">Features marked with red locks are restricted based on your current simulated subscription status. Click any plan in the grid below to upgrade instantly!</p>
-            
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
-              {[
-                { key: 'directory', label: 'B2B Directory' },
-                { key: 'messaging', label: 'B2B Messaging' },
-                { key: 'business feed', label: 'Business Feed' },
-                { key: 'marketplace', label: 'B2B Marketplace' },
-                { key: 'crm', label: 'Enterprise CRM' },
-                { key: 'projects', label: 'Projects Engine' },
-                { key: 'rfq', label: 'RFQ & Tenders' },
-                { key: 'procurement', label: 'Procurement' },
-                { key: 'inventory', label: 'Inventory Suite' },
-                { key: 'finance', label: 'Finance Engine' },
-                { key: 'analytics', label: 'Analytics BI' },
-                { key: 'hr_dms', label: 'HR DMS Portal' }
-              ].map((fItem, fIdx) => {
-                const isUnlocked = hasAccess(fItem.key);
-                return (
-                  <div key={fIdx} className={`p-2.5 rounded-lg border text-xs flex items-center justify-between transition-all ${
-                    isUnlocked 
-                      ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400' 
-                      : 'bg-slate-950 border-slate-850 text-slate-600'
-                  }`}>
-                    <span className="font-semibold">{fItem.label}</span>
-                    {isUnlocked ? (
-                      <span className="text-[9px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-mono">
-                        Unlocked
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-1 text-red-500 text-[9px] font-mono bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
-                        <Lock className="w-2.5 h-2.5" />
-                        <span>LOCKED</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 5 Plans Management Grid */}
-          <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-              <div>
-                <h3 className="text-sm font-bold text-white font-display">Simulated Subscription Licenses</h3>
-                <p className="text-xs text-slate-400">Upgrade or downgrade dynamically below. Taxes and gateway fees are omitted in sandbox.</p>
-              </div>
-
-              <button
-                onClick={() => setIsCustomPlanModalOpen(true)}
-                className="bg-slate-900 hover:bg-slate-800 border border-slate-800 px-4 py-2 rounded-xl text-xs font-semibold text-purple-400 hover:text-purple-300 transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Build Custom Plan SLA</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
-              {PLANS_DATA.map((plan, pIdx) => {
-                const isActive = subState.currentPlanId === plan.id;
-                return (
-                  <div 
-                    key={pIdx} 
-                    className={`bg-slate-900 border rounded-2xl p-4 flex flex-col justify-between transition-all relative overflow-hidden ${
-                      isActive 
-                        ? 'border-purple-500 shadow-xl ring-1 ring-purple-500/25 bg-gradient-to-b from-slate-900 to-slate-950' 
-                        : 'border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    {plan.status === 'Popular' && (
-                      <div className="absolute top-0 right-0 bg-purple-600 text-white font-mono text-[8px] font-bold px-2 py-0.5 rounded-bl uppercase tracking-wider">
-                        Popular
-                      </div>
-                    )}
-                    {isActive && (
-                      <div className="absolute top-0 right-0 bg-emerald-600 text-white font-mono text-[8px] font-bold px-2.5 py-0.5 rounded-bl uppercase tracking-wider flex items-center gap-0.5">
-                        <Check className="w-2.5 h-2.5" />
-                        <span>ACTIVE</span>
-                      </div>
-                    )}
-
-                    <div className="space-y-2">
-                      <div className="text-xs font-bold text-white font-display">{plan.name}</div>
-                      <p className="text-[10px] text-slate-400 leading-snug">{plan.description}</p>
-                      
-                      <div className="pt-2 border-b border-slate-850 pb-2">
-                        <div className="text-xl font-extrabold text-white">₹{plan.priceMonthly.toLocaleString()}<span className="text-xs font-normal text-slate-500">/mo</span></div>
-                        <div className="text-[9px] font-mono text-slate-500 mt-0.5">Yearly: ₹{plan.priceYearly.toLocaleString()}/yr</div>
-                      </div>
-
-                      {/* Details specs */}
-                      <div className="space-y-1.5 pt-2 text-[10.5px]">
-                        <div className="text-slate-400 flex justify-between">
-                          <span>User Seats Limit:</span>
-                          <span className="text-white font-semibold">{plan.userLimit}</span>
-                        </div>
-                        <div className="text-slate-400 flex justify-between">
-                          <span>DMS Storage:</span>
-                          <span className="text-white font-semibold">{plan.storageLimit}</span>
-                        </div>
-                        <div className="text-slate-400 flex justify-between">
-                          <span>Allowed Businesses:</span>
-                          <span className="text-white font-semibold">{plan.orgLimit}</span>
-                        </div>
-                        <div className="text-slate-400 flex justify-between">
-                          <span>Support Level:</span>
-                          <span className="text-slate-300 font-semibold">{plan.supportLevel}</span>
-                        </div>
-                      </div>
-
-                      {/* Included Core Features */}
-                      <div className="pt-3">
-                        <div className="text-[9px] font-mono text-slate-500 uppercase font-bold tracking-wider mb-1">Included Workflows:</div>
-                        <div className="flex flex-wrap gap-1">
-                          {plan.features.slice(0, 4).map((feat, fIdx) => (
-                            <span key={fIdx} className="text-[8px] bg-slate-950 text-slate-400 px-1.5 py-0.5 rounded border border-slate-850 font-mono uppercase">
-                              {feat.replace('_', ' ')}
-                            </span>
-                          ))}
-                          {plan.features.length > 4 && (
-                            <span className="text-[8px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded font-mono font-bold">
-                              +{plan.features.length - 4} MORE
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 mt-4 border-t border-slate-850">
-                      {isActive ? (
-                        <button
-                          disabled
-                          className="w-full text-center bg-slate-950 border border-slate-800 text-slate-500 py-2 rounded-xl text-xs font-semibold font-mono"
-                        >
-                          Active Plan
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            if (plan.priceMonthly > activePlan.priceMonthly) {
-                              handleUpgradePlan(plan.id);
-                            } else {
-                              handleDowngradePlan(plan.id);
-                            }
-                          }}
-                          className={`w-full text-center py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
-                            plan.priceMonthly > activePlan.priceMonthly
-                              ? 'bg-purple-600 hover:bg-purple-500 text-white'
-                              : 'bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-300'
-                          }`}
-                        >
-                          {plan.priceMonthly > activePlan.priceMonthly ? 'Upgrade Plan' : 'Downgrade Plan'}
-                        </button>
-                      )}
-                    </div>
-
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Payment & Invoice summary */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-            <h3 className="text-sm font-bold text-white mb-1.5 font-display">Subscription Payments & Invoices Ledger</h3>
-            <p className="text-xs text-slate-400 mb-4">Complete historic billing logs conforming to financial audit compliance.</p>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-500 font-mono">
-                    <th className="pb-2.5">Invoice ID</th>
-                    <th className="pb-2.5">Billing Date</th>
-                    <th className="pb-2.5">Plan Type</th>
-                    <th className="pb-2.5">Amount Paid</th>
-                    <th className="pb-2.5">Payment Method</th>
-                    <th className="pb-2.5">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-850">
-                  {paymentHistory.map((inv, idx) => (
-                    <tr key={idx} className="hover:bg-slate-850/40">
-                      <td className="py-3 font-mono font-bold text-slate-200">{inv.id}</td>
-                      <td className="py-3 text-slate-300">{inv.date}</td>
-                      <td className="py-3 text-white font-semibold">{inv.planName}</td>
-                      <td className="py-3 font-mono text-slate-200">{inv.amount}</td>
-                      <td className="py-3 text-slate-400">{inv.method}</td>
-                      <td className="py-3">
-                        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
-                          {inv.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* activeTab === 'reports' */}
-      {activeTab === 'reports' && (
-        <div className="space-y-6 bg-slate-900 border border-slate-800 rounded-2xl p-5">
-          <div className="border-b border-slate-800 pb-3 mb-4">
-            <h3 className="text-sm font-bold text-white font-display">Central Executive Report Compilation Center</h3>
-            <p className="text-xs text-slate-400 mt-1">Select and compile custom regulatory reports based on live simulated multi-module datasets.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[
-              { title: 'Lead Generation & Conversion Report', cat: 'Leads & Marketing', desc: 'Breakdown of cost per lead, quality status, and sales channel performance.' },
-              { title: 'Enterprise CRM Engagement Analysis', cat: 'CRM & Accounts', desc: 'Customer satisfaction benchmarks and high-value project escalations.' },
-              { title: 'Project Portfolio Milestone Log', cat: 'Civil Works Portfolio', desc: 'Average completion timelines, contractor performance ratings, and material bottlenecks.' },
-              { title: 'Finance Revenue & Subscriptions Ledger', cat: 'Finance & Escrow', desc: 'MRR tracking, pro-rata plan upgrade receipts, and pending invoices.' },
-              { title: 'Inventory Utilization Summary', cat: 'Inventory & Stocks', desc: 'Stock turnover ratios, material scrap volume, and urgent replenishment schedules.' },
-              { title: 'Supplier Procurement Performance Audit', cat: 'Procurement Logistics', desc: 'Supplier bid variances, historical RFQ savings, and contract compliance ratings.' },
-              { title: 'Marketplace Gross Sales Volume', cat: 'Marketplace Hub', desc: 'Aggregate material listings traded, platform fee collections, and buyer leads.' },
-              { title: 'Audit Trail and Compliance Chain', cat: 'System Integrity', desc: 'Unalterable cryptographic hash integrity check for LOG-01 parameters.' },
-              { title: 'Active Membership Entitlement Census', cat: 'SaaS Administration', desc: 'License allocations, seat usage limits, and trial renewal projections.' }
-            ].map((rep, idx) => (
-              <div key={idx} className="p-4 bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl flex flex-col justify-between space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
-                      {rep.cat}
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-mono">Code: REP-00{idx+1}</span>
-                  </div>
-                  <h4 className="text-xs font-bold text-white font-display">{rep.title}</h4>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">{rep.desc}</p>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-slate-900 pt-3">
-                  <span className="text-[9.5px] font-mono text-slate-500">Formats: PDF, XLS, CSV</span>
-                  <button 
-                    onClick={() => {
-                      onLogTriggered('REPORT_GENERATION_REQUESTED', 'reports', `REP-00${idx+1}`, 'SUCCESS', `Executed custom compilation parameters for ${rep.title}.`);
-                      onNotificationTriggered('in_app', userSession?.email || 'operator@realtyconnect.in', `Your requested document '${rep.title}' has been generated.`);
-                      showToast(`Generated: ${rep.title}`, 'success');
-                    }}
-                    className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-1 px-3 rounded text-[10px] font-mono transition-all cursor-pointer flex items-center gap-1"
-                  >
-                    <Play className="w-2.5 h-2.5 fill-current" />
-                    <span>Compile Report</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
-
-      {/* 5. INTERACTIVE PLAN BUILDER DIALOG (MODAL) */}
-      {isCustomPlanModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
-            <button 
-              onClick={() => setIsCustomPlanModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-500 hover:text-slate-300"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="border-b border-slate-800 pb-2">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <SlidersHorizontal className="w-5 h-5 text-purple-400" />
-                Tailored SLA Custom Plan Builder
-              </h3>
-              <p className="text-xs text-slate-400">Configure exact seats, storage caps, and module authorizations.</p>
-            </div>
-
-            <form onSubmit={handleCreateCustomPlan} className="space-y-4">
-              
-              {/* User seat slider */}
-              <div>
-                <label className="block text-xs text-slate-300 font-semibold mb-1">
-                  ALLOCATED USER SEATS: <span className="text-purple-400 font-mono font-bold">{customPlanState.userLimit} Seats</span>
-                </label>
-                <input 
-                  type="range" 
-                  min="5" 
-                  max="500" 
-                  value={customPlanState.userLimit}
-                  onChange={(e) => setCustomPlanState({...customPlanState, userLimit: parseInt(e.target.value)})}
-                  className="w-full accent-purple-500 bg-slate-950 rounded-lg cursor-pointer h-2"
-                />
-                <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-0.5">
-                  <span>5 Seats</span>
-                  <span>500 Seats max</span>
-                </div>
-              </div>
-
-              {/* Storage slider */}
-              <div>
-                <label className="block text-xs text-slate-300 font-semibold mb-1">
-                  SECURED DOCUMENT CLOUD STORAGE: <span className="text-purple-400 font-mono font-bold">{customPlanState.storageGB} GB</span>
-                </label>
-                <input 
-                  type="range" 
-                  min="10" 
-                  max="1000" 
-                  value={customPlanState.storageGB}
-                  onChange={(e) => setCustomPlanState({...customPlanState, storageGB: parseInt(e.target.value)})}
-                  className="w-full accent-purple-500 bg-slate-950 rounded-lg cursor-pointer h-2"
-                />
-                <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-0.5">
-                  <span>10 GB</span>
-                  <span>1 TB (1000 GB) max</span>
-                </div>
-              </div>
-
-              {/* Support SLA level */}
-              <div>
-                <label className="block text-xs text-slate-300 font-semibold mb-1">Support Level Level SLA</label>
-                <select 
-                  value={customPlanState.supportLevel}
-                  onChange={(e) => setCustomPlanState({...customPlanState, supportLevel: e.target.value})}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none"
-                >
-                  <option>Email & Chat (24 Hrs Response)</option>
-                  <option>Priority Email & Chat (4 Hrs SLA)</option>
-                  <option>Dedicated 24/7 Account Manager (30 Mins SLA)</option>
-                  <option>Corporate Boardroom Direct Liaison (On-Demand)</option>
-                </select>
-              </div>
-
-              {/* Allowed modules */}
-              <div>
-                <label className="block text-xs text-slate-300 font-semibold mb-1.5">Permitted Cooperative Modules</label>
-                <div className="grid grid-cols-2 gap-2 max-h-24 overflow-y-auto bg-slate-950 p-2 rounded-lg border border-slate-800">
-                  {[
-                    { key: 'directory', label: 'B2B Directory' },
-                    { key: 'messaging', label: 'B2B Messaging' },
-                    { key: 'projects', label: 'Projects Engine' },
-                    { key: 'rfq', label: 'RFQ & Tenders' },
-                    { key: 'finance', label: 'Finance & Escrow' },
-                    { key: 'analytics', label: 'Analytics BI' }
-                  ].map((feat, idx) => {
-                    const isSelected = customPlanState.selectedFeatures.includes(feat.key);
-                    return (
-                      <label key={idx} className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
-                        <input 
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => {
-                            const nextFeats = isSelected 
-                              ? customPlanState.selectedFeatures.filter(f => f !== feat.key)
-                              : [...customPlanState.selectedFeatures, feat.key];
-                            setCustomPlanState({...customPlanState, selectedFeatures: nextFeats});
-                          }}
-                          className="accent-purple-500 rounded"
-                        />
-                        <span>{feat.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Estimated calculations summary */}
-              <div className="bg-slate-950 p-3 rounded-lg border border-slate-850 space-y-1">
-                <span className="text-[10px] font-mono text-slate-500 font-bold uppercase">Estimated Monthly Charge</span>
-                <div className="text-lg font-bold text-white">
-                  ₹{((customPlanState.userLimit * 200) + (customPlanState.storageGB * 15) + (customPlanState.selectedFeatures.length * 500)).toLocaleString()} / Month
-                </div>
-                <p className="text-[9.5px] text-slate-400">Excludes standard government GST (18%). Term contract renews monthly.</p>
-              </div>
-
-              <div className="flex gap-2 justify-end pt-2">
-                <button 
-                  type="button" 
-                  onClick={() => setIsCustomPlanModalOpen(false)}
-                  className="bg-slate-950 hover:bg-slate-850 border border-slate-800 px-4 py-2 rounded-xl text-xs font-semibold text-slate-300"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit"
-                  className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 rounded-xl text-xs"
-                >
-                  Confirm & Provision Custom Plan
-                </button>
-              </div>
-
-            </form>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }

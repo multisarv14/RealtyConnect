@@ -6,9 +6,10 @@ import { z } from 'zod';
 import { ROLE_DIRECTORY_CATEGORY, SELF_SERVICE_ROLES, passwordPolicyError } from '../../../shared/roles';
 import { config } from '../config';
 import { asyncHandler, HttpError, permissionsFor, requireAuth, signAccessToken } from '../middleware/auth';
-import { Notification, Organization, RefreshToken, User, type UserDoc } from '../models';
+import { Invite, Notification, Organization, RefreshToken, User, type UserDoc } from '../models';
 import { auditRequest } from '../services/audit';
 import { getConfigNumber, isMaintenanceMode } from '../services/configs';
+import { planOf } from '../services/plans';
 
 const REFRESH_COOKIE = 'rc_refresh';
 const cookieOptions = {
@@ -20,10 +21,16 @@ const cookieOptions = {
 
 const hashToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 
+async function sessionPlan(orgId: string) {
+  const plan = await planOf(orgId);
+  return { id: plan.id, name: plan.name, features: plan.features, limits: plan.limits };
+}
+
 async function buildSession(user: UserDoc, activeRole: string) {
   const org = await Organization.findById(user.orgId).lean();
   return {
     id: user.id as string,
+    orgRole: user.orgRole || 'OWNER',
     email: user.email,
     name: user.name,
     role: activeRole,
@@ -33,21 +40,28 @@ async function buildSession(user: UserDoc, activeRole: string) {
     organizationName: org?.name ?? '',
     subscriptionPlan: org?.subscriptionPlan ?? 'Standard Free',
     reraRegistration: org?.reraRegistration ?? 'N/A',
+    verified: !!org?.verified,
+    plan: await sessionPlan(String(user.orgId)),
+    category: org?.category ?? '',
   };
 }
 
 /** Issues an access token plus a rotating refresh cookie for the chosen identity (Rule AUTH-06). */
-async function issueSession(res: Response, user: UserDoc, activeRole: string) {
+async function issueSession(req: Request, res: Response, user: UserDoc, activeRole: string, sessionStart?: Date) {
   const refreshToken = crypto.randomBytes(48).toString('hex');
   await RefreshToken.create({
     tokenHash: hashToken(refreshToken),
     userId: user._id,
     activeRole,
+    ip: req.ip || '',
+    userAgent: String(req.headers['user-agent'] || '').slice(0, 300),
+    sessionStart: sessionStart ?? new Date(),
+    lastUsedAt: new Date(),
     expiresAt: new Date(Date.now() + config.refreshTokenTtlSeconds * 1000),
   });
   res.cookie(REFRESH_COOKIE, refreshToken, { ...cookieOptions, maxAge: config.refreshTokenTtlSeconds * 1000 });
   return {
-    accessToken: signAccessToken({ userId: user.id, email: user.email, role: activeRole, orgId: String(user.orgId) }),
+    accessToken: signAccessToken({ userId: user.id, email: user.email, role: activeRole, orgId: String(user.orgId), orgRole: user.orgRole || 'OWNER' }),
     expiresIn: config.accessTokenTtlSeconds,
     session: await buildSession(user, activeRole),
   };
@@ -58,7 +72,7 @@ async function revokeCurrentRefreshToken(req: Request) {
   if (token) await RefreshToken.deleteOne({ tokenHash: hashToken(token) });
 }
 
-const credentialLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 50, standardHeaders: true, legacyHeaders: false });
+const credentialLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: config.authRateLimit, standardHeaders: true, legacyHeaders: false });
 
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(255),
@@ -70,8 +84,10 @@ const registerSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(255),
   password: z.string().max(200),
   name: z.string().trim().max(120).optional(),
-  organizationName: z.string().trim().min(2).max(160),
-  role: z.string().max(50),
+  organizationName: z.string().trim().max(160).default(''),
+  role: z.string().max(50).default(''),
+  // Joins the inviting company instead of creating a new one.
+  inviteCode: z.string().trim().max(100).optional(),
   city: z.string().trim().max(80).optional(),
   state: z.string().trim().max(80).optional(),
   reraRegistration: z.string().trim().max(60).optional(),
@@ -148,7 +164,7 @@ authRouter.post(
     // Signing in over an existing session (e.g. switching accounts) retires the old one.
     await revokeCurrentRefreshToken(req);
     await auditRequest(req, 'AUTH_LOGIN_SUCCESS', 'users', email, 'SUCCESS', `Authenticated with roles [${user.roles.join(', ')}]. Active identity: ${activeRole}.`, { userId: user.email, userRole: activeRole });
-    res.json(await issueSession(res, user, activeRole));
+    res.json(await issueSession(req, res, user, activeRole));
   })
 );
 
@@ -159,33 +175,57 @@ authRouter.post(
     const input = registerSchema.parse(req.body);
     const policyError = passwordPolicyError(input.password);
     if (policyError) throw new HttpError(400, policyError);
-    if (!SELF_SERVICE_ROLES.includes(input.role)) {
-      throw new HttpError(400, 'This role cannot be self-registered.');
-    }
     if (await User.exists({ email: input.email })) {
       throw new HttpError(409, 'An account with this email already exists.');
     }
 
-    // Every registration creates its own organization. Joining an existing one must go
-    // through an invitation, otherwise anyone could claim a company name and read its data.
-    const org = await Organization.create({
-      name: input.organizationName,
-      reraRegistration: input.reraRegistration || 'N/A',
-      city: input.city || '',
-      state: input.state || '',
-      ...ROLE_DIRECTORY_CATEGORY[input.role],
-    });
-    const user = await User.create({
-      email: input.email,
-      passwordHash: await bcrypt.hash(input.password, 12),
-      name: input.name || input.organizationName,
-      roles: [input.role],
-      orgId: org._id,
-    });
+    let org: InstanceType<typeof Organization>;
+    let user: UserDoc;
+    let role = input.role;
+
+    if (input.inviteCode) {
+      // Joining a company needs an invitation addressed to this email.
+      const invite = await Invite.findOne({ codeHash: hashToken(input.inviteCode), expiresAt: { $gt: new Date() } });
+      if (!invite || invite.email !== input.email) throw new HttpError(400, 'This invitation is invalid, expired or addressed to a different email.');
+      const found = await Organization.findById(invite.orgId);
+      if (!found) throw new HttpError(400, 'The inviting company no longer exists.');
+      org = found;
+      role = invite.stakeholderRole;
+      user = await User.create({
+        email: input.email,
+        passwordHash: await bcrypt.hash(input.password, 12),
+        name: input.name || invite.name || input.email,
+        roles: [role],
+        orgRole: invite.orgRole,
+        orgId: org._id,
+      });
+      await invite.deleteOne();
+    } else {
+      if (!input.organizationName || input.organizationName.length < 2) throw new HttpError(400, 'Invalid request: organizationName - enter your company name.');
+      if (!SELF_SERVICE_ROLES.includes(input.role)) throw new HttpError(400, 'This role cannot be self-registered.');
+      // Every registration without an invitation creates its own company.
+      org = await Organization.create({
+        name: input.organizationName,
+        reraRegistration: input.reraRegistration || 'N/A',
+        city: input.city || '',
+        state: input.state || '',
+        ...ROLE_DIRECTORY_CATEGORY[input.role],
+        subscriptionPlan: 'Free',
+        planId: 'plan-free',
+      });
+      user = await User.create({
+        email: input.email,
+        passwordHash: await bcrypt.hash(input.password, 12),
+        name: input.name || input.organizationName,
+        roles: [input.role],
+        orgRole: 'OWNER',
+        orgId: org._id,
+      });
+    }
 
     await revokeCurrentRefreshToken(req);
-    await auditRequest(req, 'USER_REGISTERED', 'users', user.email, 'SUCCESS', `Registered ${input.role} account for organization "${org.name}".`, { userId: user.email, userRole: input.role });
-    res.status(201).json(await issueSession(res, user, input.role));
+    await auditRequest(req, 'USER_REGISTERED', 'users', user.email, 'SUCCESS', `Registered ${role} account for organization "${org.name}".`, { userId: user.email, userRole: input.role });
+    res.status(201).json(await issueSession(req, res, user, role));
   })
 );
 
@@ -201,7 +241,7 @@ authRouter.post(
       res.clearCookie(REFRESH_COOKIE, cookieOptions);
       throw new HttpError(401, 'No active session.');
     }
-    res.json(await issueSession(res, user, stored.activeRole));
+    res.json(await issueSession(req, res, user, stored.activeRole, stored.sessionStart));
   })
 );
 
@@ -232,7 +272,7 @@ authRouter.post(
     }
     await revokeCurrentRefreshToken(req);
     await auditRequest(req, 'AUTH_ROLE_IDENTITY_SWITCH', 'user_roles', user.email, 'SUCCESS', `Rule AUTH-06: switched active session context to "${role}".`);
-    res.json(await issueSession(res, user, role));
+    res.json(await issueSession(req, res, user, role));
   })
 );
 

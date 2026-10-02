@@ -7,6 +7,7 @@ import { asyncHandler, hasPermission, HttpError, invalidatePermissionCache, requ
 import { AuditLog, Master, MasterCategory, Notification, Role, SystemConfig } from '../models';
 import { appendAudit, auditRequest, toClientLog, verifyChain } from '../services/audit';
 import { DEMO_ACCOUNTS } from '../services/seed';
+import { emailConfigured, sendEmail } from '../services/mailer';
 
 export const platformRouter = Router();
 
@@ -216,9 +217,10 @@ platformRouter.post(
     const input = z
       .object({ type: z.enum(['email', 'sms', 'push', 'in_app']), recipient: z.string().trim().min(1).max(255), content: z.string().trim().min(1).max(2000) })
       .parse(req.body);
-    // In-app notifications are delivered by being stored. Email/SMS/push stay "queued":
-    // no delivery provider is wired up yet, and claiming "sent" would be untrue.
-    const status = input.type === 'in_app' ? 'sent' : 'queued';
+    // In-app notifications are delivered by being stored. Email is sent when an SMTP server is configured.
+    // SMS and push have no provider yet, so they stay "queued"; claiming "sent" would be untrue.
+    let status: 'sent' | 'failed' | 'queued' = input.type === 'in_app' ? 'sent' : 'queued';
+    if (input.type === 'email' && emailConfigured()) status = (await sendEmail(input.recipient, 'RealtyConnect', input.content)) ? 'sent' : 'failed';
     const item = await Notification.create({ ...input, status, createdBy: req.auth!.email, orgId: req.auth!.orgId });
     res.status(201).json(toClientNotification(item));
   })

@@ -31,6 +31,7 @@ const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const inFlight = new Map<string, Promise<void>>();
 const retryDelay = new Map<string, number>();
 const errorListeners = new Set<(message: string) => void>();
+const changeListeners = new Set<(key: string) => void>();
 let online = false;
 
 type Item = Record<string, unknown> & { id: string | number };
@@ -119,6 +120,12 @@ function flush(key: string, leaving = false): Promise<void> {
       if (permanent) {
         rejected.set(key, current);
         errorListeners.forEach(listener => listener(`Could not save your changes: ${err.message}`));
+        // Go back to what the server holds so the screen does not show something that was not saved.
+        const serverText = synced.get(key);
+        if (serverText === undefined) cache.delete(key);
+        else cache.set(key, serverText);
+        rejected.delete(key);
+        changeListeners.forEach(listener => listener(key));
         return;
       }
       const delay = Math.min((retryDelay.get(key) ?? 1000) * 2, MAX_RETRY_MS);
@@ -155,8 +162,11 @@ export const appStore = {
     if (online) schedule(key);
   },
 
-  /** Loads everything the signed-in user can see. Call after authenticating, before rendering the workspace. */
-  async hydrate(): Promise<void> {
+  /**
+   * Loads everything the signed-in user can see. Call after authenticating, before rendering the workspace.
+   * With `blank` set, data that was never saved starts empty instead of the modules' built-in sample records.
+   */
+  async hydrate(blank = false): Promise<void> {
     const { values } = await api<{ values: Record<string, unknown> }>('GET', '/store');
     this.reset();
     for (const [key, value] of Object.entries(values)) {
@@ -165,7 +175,45 @@ export const appStore = {
       cache.set(key, text);
       synced.set(key, text);
     }
+    if (blank) {
+      for (const [key, def] of Object.entries(STORE_KEYS)) {
+        if (cache.has(key)) continue;
+        const empty = def.kind === 'list' ? [] : def.empty;
+        if (empty === undefined) continue;
+        // Nothing is stored on the server yet, so the empty value is also what the server is taken to hold.
+        const text = JSON.stringify(empty);
+        cache.set(key, text);
+        synced.set(key, text);
+      }
+    }
     online = true;
+  },
+
+  /**
+   * Pulls the latest server copy of the given keys (data other people may have changed).
+   * A key with unsaved local edits is left alone. Returns the keys that changed.
+   */
+  async refresh(keys: string[]): Promise<string[]> {
+    if (!online || keys.length === 0) return [];
+    const { values } = await api<{ values: Record<string, unknown> }>('GET', `/store?keys=${keys.map(encodeURIComponent).join(',')}`);
+    const changed: string[] = [];
+    for (const key of keys) {
+      if (!isManagedKey(key) || inFlight.has(key) || timers.has(key)) continue;
+      if (cache.get(key) !== synced.get(key)) continue; // local edits pending
+      const text = key in values ? JSON.stringify(values[key]) : undefined;
+      if (text === undefined || text === synced.get(key)) continue;
+      cache.set(key, text);
+      synced.set(key, text);
+      changed.push(key);
+    }
+    changed.forEach(key => changeListeners.forEach(listener => listener(key)));
+    return changed;
+  },
+
+  /** Subscribe to keys replaced by refresh(). */
+  onChange(listener: (key: string) => void): () => void {
+    changeListeners.add(listener);
+    return () => changeListeners.delete(listener);
   },
 
   /** Pushes every pending change now. `leaving` marks requests to survive the page being closed. */

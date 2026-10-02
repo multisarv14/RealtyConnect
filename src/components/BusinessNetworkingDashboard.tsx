@@ -209,17 +209,20 @@ export default function BusinessNetworkingDashboard({
   // Comprehensive company lookups and default mock state generator
   const getCompanyDetails = (id: string) => {
     const b = allBusinesses.find(item => item.id === id);
+    // A company not in the directory list yet is described by what the connection record itself carries.
+    const c = connections.find(item => item.businessId === id);
+    const sample = !/^[0-9a-f]{24}$/.test(id);
     return {
       id,
-      name: b?.name || (id === 'ent-1' ? 'Apex Developers Ltd' : id === 'ent-2' ? 'BuildCorp Construction' : id === 'ent-3' ? 'Elite Materials Group' : 'Premium Partner'),
-      category: b?.category || 'Enterprise Segment',
-      location: b?.location || 'Mumbai, MH',
-      verified: b?.verified ?? true,
-      logoBg: b?.logoBg || 'bg-slate-700',
-      rating: b?.rating || '4.8',
-      membership: id === 'ent-1' || id === 'ent-2' ? 'Enterprise Platinum' : 'Premium Gold',
-      specialty: b?.specialty || b?.description || 'Corporate Infrastructure Partner',
-      tags: b?.tags || ['RERA Compliant', 'ISO Certified']
+      name: b?.name || c?.businessName || (id === 'ent-1' ? 'Apex Developers Ltd' : id === 'ent-2' ? 'BuildCorp Construction' : id === 'ent-3' ? 'Elite Materials Group' : 'Company'),
+      category: b?.category || c?.businessCategory || '',
+      location: b?.location || c?.businessLocation || '',
+      verified: b?.verified ?? false,
+      logoBg: b?.logoBg || c?.logoBg || 'bg-slate-700',
+      rating: b?.rating || (sample ? '4.8' : 'New'),
+      membership: sample ? (id === 'ent-1' || id === 'ent-2' ? 'Enterprise Platinum' : 'Premium Gold') : 'Member',
+      specialty: b?.specialty || b?.description || '',
+      tags: b?.tags || (sample ? ['RERA Compliant', 'ISO Certified'] : [])
     };
   };
 

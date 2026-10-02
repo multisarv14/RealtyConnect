@@ -105,6 +105,9 @@ export interface DocumentVersion {
 
 export interface DocumentRecord {
   id: string;
+  /** Stored file behind this record (absent for sample documents). */
+  fileId?: string;
+  fileName?: string;
   title: string;
   documentType: string; // e.g., pdf, xlsx, docx, dwg, zip
   category: 

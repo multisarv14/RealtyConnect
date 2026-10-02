@@ -2,8 +2,11 @@
  * RealtyConnect™ Sprint 12 - B2B Marketplace Module
  */
 
-import { currentOrgId, currentOrgName, currentUserEmail, currentUserName } from '../lib/identity';
+import { currentOrgId, currentOrgName, currentOrgVerified, currentUserEmail, currentUserName } from '../lib/identity';
 import { appStore } from '../lib/appStore';
+import { api, errorMessage } from '../lib/api';
+import { isRegisteredCompanyId } from '../lib/companies';
+import { useStoreSync } from '../lib/usePersistentState';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, Filter, MapPin, ShieldCheck, Heart, Share2, Phone, MessageSquare, Send, Mail, Info, FileText, 
@@ -485,6 +488,10 @@ export default function BusinessMarketplace({
   });
 
   // Current selected listing details
+  // Listings and enquiries from other companies arrive without a reload.
+  useStoreSync<MarketplaceListing[]>('realtyconnect_marketplace_listings', setListings);
+  useStoreSync<ProductEnquiry[]>('realtyconnect_product_enquiries', setEnquiries);
+
   const [selectedListing, setSelectedListing] = useState<MarketplaceListing | null>(null);
 
   // Enquiry modal triggers
@@ -716,6 +723,49 @@ export default function BusinessMarketplace({
       status: 'Pending'
     };
 
+    if (isRegisteredCompanyId(enquiryModalListing.businessId)) {
+      const listing = enquiryModalListing;
+      const conversationId = `conv-mkt-${listing.id}`;
+      // The seller receives a lead, a marketplace enquiry and a conversation it can answer.
+      api('POST', '/network/enquiries', {
+        toOrgId: listing.businessId,
+        kind: 'product',
+        subject: `Enquiry: ${listing.name}`.slice(0, 200),
+        category: listing.category,
+        message: enqMessage,
+        email: enqSenderEmail,
+        phone: enqSenderPhone,
+        relatedId: listing.id,
+        relatedTitle: listing.name,
+        conversationId
+      })
+        .then(() => {
+          setEnquiries(prev => [newEnq, ...prev]);
+          try {
+            const list = JSON.parse(appStore.getItem('realtyconnect_conversations') || '[]');
+            const now = new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const message = { id: `msg-${Date.now()}`, sender: 'self', senderName: currentUserName(), senderCompany: currentOrgName(), text: `Enquiry: ${listing.name}\n\n${enqMessage}`, timestamp: now, type: 'text', status: 'delivered' };
+            const existing = list.find((c: any) => c.id === conversationId);
+            if (existing) {
+              existing.messages.push(message);
+              existing.lastMessageText = message.text.slice(0, 140);
+              existing.lastMessageTime = now;
+            } else {
+              list.unshift({ id: conversationId, companyName: listing.businessName, companyId: listing.businessId, logoBg: 'bg-emerald-600', conversationType: 'Marketplace Enquiry', lastMessageText: message.text.slice(0, 140), lastMessageTime: now, unreadCount: 0, priority: 'Normal', pinned: false, archived: false, assignedExecutive: currentUserName(), relatedEntity: { type: 'Marketplace', id: listing.id, title: listing.name }, messages: [message] });
+            }
+            appStore.setItem('realtyconnect_conversations', JSON.stringify(list));
+          } catch (err) {
+            console.error('Could not record the conversation locally', err);
+          }
+          onLogTriggered('B2B_MKT_ENQUIRY_DISPATCHED', 'marketplace', listing.id, 'SUCCESS', `Sent product enquiry about "${listing.name}" to ${listing.businessName}`);
+          showToast(`Enquiry delivered to ${listing.businessName}. Their reply will appear in Messaging.`, 'success');
+          setEnqMessage('');
+          setEnquiryModalListing(null);
+        })
+        .catch(err => showToast(errorMessage(err), 'error'));
+      return;
+    }
+
     setEnquiries(prev => [newEnq, ...prev]);
     onLogTriggered(
       'B2B_MKT_ENQUIRY_DISPATCHED',
@@ -909,7 +959,7 @@ export default function BusinessMarketplace({
       availableQuantity: newListing.availableQuantity || 'On Demand',
       businessId: (currentOrgId() || 'ent-client'),
       businessName: currentOrgName(),
-      verifiedSeller: true,
+      verifiedSeller: currentOrgVerified(),
       membershipLevel: 'Enterprise Platinum',
       rating: 5.0,
       featured: false,
@@ -936,8 +986,8 @@ export default function BusinessMarketplace({
       category: 'Contractors', // or Developers
       logoBg: 'bg-emerald-600',
       logoText: 'MS',
-      verified: true,
-      premium: true,
+      verified: currentOrgVerified(),
+      premium: false,
       timestamp: 'Just Now',
       postType: 'New Product Launch',
       title: `PRODUCT LAUNCH: ${completedListing.name}`,

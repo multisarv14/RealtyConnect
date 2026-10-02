@@ -40,7 +40,7 @@ const ConfigPanel = React.lazy(() => import('./components/ConfigPanel'));
 const FileUploader = React.lazy(() => import('./components/FileUploader'));
 const NotificationSimulator = React.lazy(() => import('./components/NotificationSimulator'));
 const LogsViewer = React.lazy(() => import('./components/LogsViewer'));
-const RegistrationOnboarding = React.lazy(() => import('./components/RegistrationOnboarding'));
+const ReviewQueues = React.lazy(() => import('./components/ReviewQueues'));
 
 // Shown until the server's values arrive (and if it cannot be reached).
 const DEFAULT_CONFIGS: SystemConfig[] = [
@@ -53,8 +53,8 @@ const DEFAULT_CONFIGS: SystemConfig[] = [
 const utcStamp = (length: number) => new Date().toISOString().replace('T', ' ').substr(0, length);
 
 export default function App() {
-  const [viewMode, setViewMode] = useState<'business' | 'onboarding' | 'foundation'>('business');
-  const [activeTab, setActiveTab] = useState<'blueprint' | 'auth' | 'masters' | 'config' | 'file' | 'noti' | 'logs'>('blueprint');
+  const [viewMode, setViewMode] = useState<'business' | 'foundation'>('business');
+  const [activeTab, setActiveTab] = useState<'blueprint' | 'auth' | 'masters' | 'config' | 'file' | 'noti' | 'logs' | 'review'>('blueprint');
 
   // True until we know whether the browser still holds a live session.
   const [booting, setBooting] = useState(true);
@@ -62,6 +62,8 @@ export default function App() {
   // Log/notification callbacks are handed to many modules; the ref lets them see the current session without re-binding.
   const sessionRef = useRef<Session | null>(null);
   const [authMeta, setAuthMeta] = useState<AuthMeta | null>(null);
+  const authMetaRef = useRef<AuthMeta | null>(null);
+  authMetaRef.current = authMeta;
   const [landingView, setLandingView] = useState('dashboard');
 
   const [configs, setConfigs] = useState<SystemConfig[]>(DEFAULT_CONFIGS);
@@ -120,7 +122,8 @@ export default function App() {
   // ---------- Session lifecycle ----------
 
   const enterWorkspace = useCallback(async (session: Session, view = 'dashboard') => {
-    await appStore.hydrate();
+    // Outside demo mode a new company starts with empty modules rather than the sample records.
+    await appStore.hydrate(!authMetaRef.current?.demoMode);
     sessionRef.current = session;
     setCurrentIdentity(session);
     // Swap the workspace in one synchronous render: modules of the previous session must
@@ -156,7 +159,10 @@ export default function App() {
         authApi.restoreSession().catch(() => null)
       ]);
       if (cancelled) return;
-      if (meta) setAuthMeta(meta);
+      if (meta) {
+        authMetaRef.current = meta;
+        setAuthMeta(meta);
+      }
       if (serverConfigs) setConfigs(serverConfigs);
       if (session) {
         try {
@@ -185,6 +191,29 @@ export default function App() {
       offStoreError();
     };
   }, [leaveWorkspace, showToast]);
+
+  // Things other companies deliver to this one (messages, leads, quotations, requests, new listings)
+  // are picked up every few seconds while the workspace is open.
+  useEffect(() => {
+    if (!userSession) return;
+    const keys = [
+      'realtyconnect_conversations', 'realtyconnect_leads', 'realtyconnect_meetings', 'realtyconnect_quotation_list',
+      'realtyconnect_product_enquiries', 'rc_net_connections', 'realtyconnect_marketplace_listings', 'realtyconnect_rfq_list',
+      'rc_opportunities', 'rc_feed_posts'
+    ];
+    let busy = false;
+    const timer = setInterval(() => {
+      if (busy || document.visibilityState !== 'visible') return;
+      busy = true;
+      Promise.all([
+        appStore.refresh(keys),
+        api<SystemNotification[]>('GET', '/notifications').then(setNotifications)
+      ])
+        .catch(() => undefined)
+        .finally(() => { busy = false; });
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [userSession?.id, userSession?.role]);
 
   const handleLogin = useCallback(async (email: string, password: string, role?: string, view = 'dashboard') => {
     await appStore.flushAll();
@@ -308,12 +337,12 @@ export default function App() {
           <React.Fragment key={userSession ? `${userSession.id}:${userSession.role}` : 'anonymous'}>
           <LandingPortal 
             authMeta={authMeta}
+            serverNotifications={notifications}
             initialViewMode={landingView}
             onLogTriggered={triggerLog}
             userSession={userSession}
             showToast={showToast}
             onToggleDevHub={() => setViewMode('foundation')}
-            onStartOnboarding={() => setViewMode('onboarding')}
             isLightMode={isLightMode}
             onToggleTheme={() => setIsLightMode(prev => !prev)}
             onLogout={handleLogout}
@@ -324,27 +353,6 @@ export default function App() {
             }}
           />
           </React.Fragment>
-        </div>
-      ) : viewMode === 'onboarding' ? (
-        <div className="w-full min-h-screen flex flex-col">
-          <React.Suspense fallback={
-            <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-950">
-              <div className="relative w-12 h-12">
-                <div className="absolute inset-0 rounded-full border-2 border-emerald-500/10" />
-                <div className="absolute inset-0 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-              </div>
-              <p className="text-slate-400 font-mono text-[10px] uppercase tracking-wider mt-4 animate-pulse">
-                Booting Registration Gateway...
-              </p>
-            </div>
-          }>
-            <RegistrationOnboarding
-              onLogTriggered={triggerLog}
-              userSession={userSession}
-              showToast={showToast}
-              onBackToLanding={() => setViewMode('business')}
-            />
-          </React.Suspense>
         </div>
       ) : (
         <>
@@ -359,10 +367,7 @@ export default function App() {
                 <span className="font-mono text-slate-400 tracking-tight font-semibold text-xs">Platform Foundation Hub</span>
               </div>
               
-              <div className="hidden md:flex items-center gap-1.5 bg-slate-950 border border-slate-850 rounded px-2 py-0.5 font-mono text-[10px] text-slate-500">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <span>PORT: 3000</span>
-              </div>
+              
 
               <button
                 type="button"
@@ -442,7 +447,7 @@ export default function App() {
             </div>
 
             {/* Dashboard Bento Hub Tabs */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-1.5 p-1 bg-slate-900 border border-slate-850 rounded-xl">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-1.5 p-1 bg-slate-900 border border-slate-850 rounded-xl">
               {[
                 { id: 'blueprint', label: 'Technical Blueprint', icon: FileCheck },
                 { id: 'auth', label: 'IAM Gateway', icon: Lock },
@@ -450,6 +455,7 @@ export default function App() {
                 { id: 'config', label: 'Global variables', icon: Settings },
                 { id: 'file', label: 'Quarantine Uploader', icon: File },
                 { id: 'noti', label: 'Async Alerts', icon: Bell },
+                { id: 'review', label: 'Review Queues', icon: ShieldCheck },
                 { id: 'logs', label: 'Compliance Audits', icon: History }
               ].map(tab => {
                 const Icon = tab.icon;
@@ -542,6 +548,8 @@ export default function App() {
                     onLogTriggered={triggerLog}
                   />
                 )}
+
+                {activeTab === 'review' && <ReviewQueues userSession={userSession} showToast={showToast} />}
 
                 {activeTab === 'logs' && (
                   <LogsViewer 

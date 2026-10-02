@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Search, 
   Building2, 
@@ -44,6 +44,9 @@ import {
 
 // Import seed datasets for rich homepage integration
 import { INITIAL_MARKETPLACE_LISTINGS } from './BusinessMarketplace';
+import { api, errorMessage } from '../lib/api';
+import { isRegisteredCompanyId } from '../lib/companies';
+import { PLANS } from '../../shared/plans';
 import { INITIAL_RFQS } from './BusinessRfqEngine';
 import { INITIAL_OPPORTUNITIES } from './BusinessOpportunitiesEngine';
 
@@ -57,6 +60,8 @@ interface MarketplaceHomeProps {
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   onSearchGlobal: (term: string, cat: string, loc: string) => void;
   onToggleDevHub?: () => void;
+  // Demo servers show the bundled sample companies and statistics; real servers show only what is registered.
+  demoMode?: boolean;
 }
 
 export default function MarketplaceHome({
@@ -68,8 +73,17 @@ export default function MarketplaceHome({
   onLogTriggered,
   showToast,
   onSearchGlobal,
-  onToggleDevHub
+  onToggleDevHub,
+  demoMode = false
 }: MarketplaceHomeProps) {
+
+  // Live numbers and the newest public listings (real servers only).
+  const [summary, setSummary] = useState<any | null>(null);
+  useEffect(() => {
+    if (demoMode) return;
+    api('GET', '/public/summary').then(setSummary).catch(() => setSummary(null));
+  }, [demoMode]);
+  const live = !demoMode;
 
   // Search Fields state
   const [searchTerm, setSearchTerm] = useState('');
@@ -128,27 +142,41 @@ export default function MarketplaceHome({
       showToast('Please fill out all required fields.', 'error');
       return;
     }
-    setContactSubmitted(true);
-    onLogTriggered(
-      'MARKETPLACE_HOME_CONTACT_SUBMITTED',
-      'contact_leads',
-      contactEmail,
-      'SUCCESS',
-      `Contact Form: Received enquiry from ${contactName} (${contactEmail}). Message: "${contactMessage}"`
-    );
-    showToast('Enquiry received. Our B2B representative will contact you shortly.', 'success');
-    setTimeout(() => {
-      setContactName('');
-      setContactEmail('');
-      setContactPhone('');
-      setContactMessage('');
-      setContactSubmitted(false);
-    }, 3000);
+    api('POST', '/public/contact', { name: contactName, email: contactEmail, phone: contactPhone, message: contactMessage })
+      .then(() => {
+        setContactSubmitted(true);
+        showToast('Message received. Our team will reply to your email.', 'success');
+        setTimeout(() => {
+          setContactName('');
+          setContactEmail('');
+          setContactPhone('');
+          setContactMessage('');
+          setContactSubmitted(false);
+        }, 3000);
+      })
+      .catch(err => showToast(errorMessage(err), 'error'));
   };
 
   const handleQuickInquirySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!quickInquiryMessage.trim()) return;
+
+    if (isRegisteredCompanyId(quickInquiryItem.id)) {
+      if (!userSession) {
+        showToast('Sign in to send an enquiry.', 'info');
+        onTriggerLogin();
+        return;
+      }
+      const target = quickInquiryItem;
+      api('POST', '/network/enquiries', { toOrgId: target.id, kind: 'profile', subject: `Enquiry from the marketplace home`, category: 'General', message: quickInquiryMessage })
+        .then(() => {
+          showToast(`Enquiry delivered to ${target.name}. Replies arrive in Messaging.`, 'success');
+          setQuickInquiryItem(null);
+          setQuickInquiryMessage('');
+        })
+        .catch(err => showToast(errorMessage(err), 'error'));
+      return;
+    }
 
     onLogTriggered(
       'MARKETPLACE_HOME_QUICK_INQUIRY',
@@ -180,6 +208,18 @@ export default function MarketplaceHome({
     { name: 'Government Bodies', count: '120+', icon: Landmark, color: 'text-violet-400 bg-violet-500/10 border-violet-500/20', featured: 'MH Industrial Dev', products: 'Industrial Plots', rfqs: '3 Active' },
     { name: 'Transport & Logistics', count: '850+', icon: Clock, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', featured: 'Green Brick Log', products: 'Bulk Delivery', rfqs: '19 Active' }
   ];
+
+  // Real servers list the directory categories with the number of companies actually registered.
+  const LIVE_CATEGORIES = ['Builders', 'Developers', 'Contractors', 'Material Vendors', 'Consultants', 'Banks', 'Equipment', 'Recruitment', 'Transport', 'DSA'].map((name, i) => ({
+    name,
+    count: String(summary?.byCategory?.[name] ?? 0),
+    icon: PREMIUM_CATEGORIES[i % PREMIUM_CATEGORIES.length].icon,
+    color: PREMIUM_CATEGORIES[i % PREMIUM_CATEGORIES.length].color,
+    featured: '',
+    products: '',
+    rfqs: ''
+  }));
+  const categoriesShown = live ? LIVE_CATEGORIES : PREMIUM_CATEGORIES.slice(0, 10);
 
   // Dummy Landmark Icon since it's used in Government
   function Landmark(props: any) {
@@ -240,6 +280,24 @@ export default function MarketplaceHome({
     { id: 'ent-4', name: 'RealtyConnect Pro Consultants', category: 'Consultants', rating: '4.9', exp: '10 Years', location: 'Hyderabad, TS', verified: true, premium: true, logoText: 'RC', logoBg: 'bg-purple-600' }
   ];
 
+  const liveBusinesses = (summary?.featuredCompanies ?? []).map((c: any) => ({
+    id: c.id,
+    name: c.name,
+    category: c.category,
+    rating: c.rating ? String(c.rating) : 'New',
+    exp: c.experienceYears ? `${c.experienceYears} Years` : 'New',
+    location: [c.city, c.state].filter(Boolean).join(', ') || 'India',
+    verified: c.verified,
+    premium: false,
+    logoText: c.logoText,
+    logoBg: c.logoBg,
+    phone: c.phone
+  }));
+  const businessesShown = live ? liveBusinesses : FEATURED_BUSINESSES;
+  const productsShown = live ? (summary?.latestListings ?? []) : INITIAL_MARKETPLACE_LISTINGS.slice(0, 3);
+  const rfqsShown = live ? (summary?.latestRfqs ?? []) : INITIAL_RFQS.slice(0, 2);
+  const oppsShown = live ? (summary?.latestOpportunities ?? []) : INITIAL_OPPORTUNITIES.slice(0, 2);
+
   return (
     <div id="marketplace-home-view" className="space-y-16 pb-12">
       
@@ -287,13 +345,24 @@ export default function MarketplaceHome({
           </div>
 
           {/* Core Trust Metrics Header Banner */}
-          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[10.5px] font-mono text-slate-400 pt-4 border-t border-slate-850/60 max-w-3xl mx-auto">
-            <span className="flex items-center gap-1.5 text-emerald-400 font-bold"><Check className="w-3.5 h-3.5 text-emerald-500" /> 24,800+ Verified Businesses</span>
-            <span className="flex items-center gap-1.5 text-emerald-400 font-bold"><Check className="w-3.5 h-3.5 text-emerald-500" /> 150,000+ Products & Materials</span>
-            <span className="flex items-center gap-1.5 text-emerald-400 font-bold"><Check className="w-3.5 h-3.5 text-emerald-500" /> 5,200+ Trusted Suppliers</span>
-            <span className="flex items-center gap-1.5 text-emerald-400 font-bold"><Check className="w-3.5 h-3.5 text-emerald-500" /> 8,500+ Active RFQs</span>
-            <span className="flex items-center gap-1.5 text-emerald-400 font-bold"><Check className="w-3.5 h-3.5 text-emerald-500" /> 120+ Cities Covered</span>
-          </div>
+          {live ? (
+            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[10.5px] font-mono text-slate-400 pt-4 border-t border-slate-800/60 max-w-3xl mx-auto">
+              {summary && summary.companies > 0 ? (
+                <>
+                  <span className="flex items-center gap-1.5 text-emerald-400 font-bold"><Check className="w-3.5 h-3.5" />{summary.companies} {summary.companies === 1 ? 'company' : 'companies'} listed</span>
+                  <span className="flex items-center gap-1.5 text-emerald-400 font-bold"><Check className="w-3.5 h-3.5" />{summary.verified} verified</span>
+                  <span className="flex items-center gap-1.5 text-emerald-400 font-bold"><Check className="w-3.5 h-3.5" />{summary.listings} marketplace {summary.listings === 1 ? 'listing' : 'listings'}</span>
+                  <span className="flex items-center gap-1.5 text-emerald-400 font-bold"><Check className="w-3.5 h-3.5" />{summary.openRfqs} open {summary.openRfqs === 1 ? 'RFQ' : 'RFQs'}</span>
+                </>
+              ) : (
+                <span className="text-slate-400">Be among the first companies to list your business and start trading.</span>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[10.5px] font-mono text-slate-400 pt-4 border-t border-slate-800/60 max-w-3xl mx-auto">
+              <span className="flex items-center gap-1.5 text-emerald-400 font-bold"><Check className="w-3.5 h-3.5 text-emerald-500" /> Demo data: figures on this page are samples</span>
+            </div>
+          )}
         </div>
       </section>
 
@@ -455,7 +524,7 @@ export default function MarketplaceHome({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {PREMIUM_CATEGORIES.slice(0, 10).map((cat, idx) => {
+          {categoriesShown.map((cat, idx) => {
             const IconComponent = cat.icon;
             return (
               <div 
@@ -466,16 +535,18 @@ export default function MarketplaceHome({
                   <div className={`p-2 rounded-lg ${cat.color} border`}>
                     <IconComponent className="w-5 h-5" />
                   </div>
-                  <span className="text-[10px] font-mono text-slate-500 font-bold uppercase tracking-wider">{cat.count}</span>
+                  <span className="text-[10px] font-mono text-slate-500 font-bold">{live ? `${cat.count} listed` : cat.count}</span>
                 </div>
                 
                 <div>
                   <h4 className="text-xs font-bold text-slate-200 group-hover:text-emerald-400 transition-colors">{cat.name}</h4>
-                  <div className="mt-2 space-y-1 text-[10px] text-slate-400 font-mono">
-                    <div><span className="text-slate-600">Featured:</span> {cat.featured}</div>
-                    <div><span className="text-slate-600">Offers:</span> {cat.products}</div>
-                    <div><span className="text-slate-600">Tenders:</span> {cat.rfqs}</div>
-                  </div>
+                  {!live && (
+                    <div className="mt-2 space-y-1 text-[10px] text-slate-400 font-mono">
+                      <div><span className="text-slate-600">Featured:</span> {cat.featured}</div>
+                      <div><span className="text-slate-600">Offers:</span> {cat.products}</div>
+                      <div><span className="text-slate-600">Tenders:</span> {cat.rfqs}</div>
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -495,14 +566,15 @@ export default function MarketplaceHome({
       </section>
 
       {/* 4. FEATURED BUSINESSES (Premium verified corporate listings with direct CTAs) */}
+      {!live || businessesShown.length > 0 && (
       <section className="px-4 md:px-6 max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between border-b border-slate-850 pb-3">
           <div>
             <h3 className="text-lg font-extrabold text-white flex items-center gap-2 font-display">
               <Building className="w-5 h-5 text-emerald-400" />
-              Verified Premium B2B Enterprises
+              {live ? 'Companies on RealtyConnect' : 'Verified Premium B2B Enterprises'}
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">Contact audited real estate builders, developers, material distributors, and corporate advisers.</p>
+            <p className="text-xs text-slate-400 mt-0.5">{live ? 'The newest registered companies; those reviewed by our team carry the Verified badge.' : 'Contact audited real estate builders, developers, material distributors, and corporate advisers.'}</p>
           </div>
           <button
             onClick={() => setActiveViewMode('directory')}
@@ -514,21 +586,21 @@ export default function MarketplaceHome({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {FEATURED_BUSINESSES.map((comp) => (
+          {businessesShown.map((comp: any) => (
             <div 
               key={comp.id}
               className="bg-slate-900/30 hover:bg-slate-900 border border-slate-850 hover:border-slate-800 rounded-xl p-4 transition-all relative flex flex-col justify-between"
             >
               {/* Badges top right */}
               <div className="flex items-center gap-1 absolute top-3 right-3">
-                <span className="text-[8px] bg-amber-500/10 text-amber-400 border border-amber-500/25 px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider flex items-center gap-0.5">
+                {comp.premium && <span className="text-[8px] bg-amber-500/10 text-amber-400 border border-amber-500/25 px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider flex items-center gap-0.5">
                   <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
                   Premium
-                </span>
-                <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider flex items-center gap-0.5">
+                </span>}
+                {comp.verified && <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider flex items-center gap-0.5">
                   <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" />
                   Verified
-                </span>
+                </span>}
               </div>
 
               {/* Company Header */}
@@ -572,7 +644,7 @@ export default function MarketplaceHome({
                 {/* Secondary Actions: Call & WhatsApp */}
                 <div className="grid grid-cols-2 gap-1">
                   <a 
-                    href="tel:+919004155600"
+                    href={comp.phone ? `tel:${String(comp.phone).replace(/\s+/g, '')}` : undefined}
                     onClick={() => onLogTriggered('B2B_CARD_CALL_INITIATED', 'companies', comp.id, 'SUCCESS', `Call log: Initiated direct corporate dialer link to ${comp.name}.`)}
                     className="bg-slate-950 hover:bg-slate-850 text-slate-300 border border-slate-800 p-2 rounded-lg flex items-center justify-center transition-all hover:text-emerald-400"
                     title="Initiate direct dial"
@@ -580,7 +652,7 @@ export default function MarketplaceHome({
                     <Phone className="w-3.5 h-3.5" />
                   </a>
                   <a 
-                    href="https://wa.me/919004155600"
+                    href={comp.phone ? `https://wa.me/${String(comp.phone).replace(/\D/g, '')}` : undefined}
                     target="_blank"
                     rel="referrer noopener"
                     onClick={() => onLogTriggered('B2B_CARD_WHATSAPP_INITIATED', 'companies', comp.id, 'SUCCESS', `WhatsApp chat link opened for entity: ${comp.name}.`)}
@@ -617,8 +689,10 @@ export default function MarketplaceHome({
           ))}
         </div>
       </section>
+      )}
 
       {/* 5. FEATURED PRODUCTS (Marketplace Listings - TradeIndia style) */}
+      {!live || productsShown.length > 0 && (
       <section className="px-4 md:px-6 max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between border-b border-slate-850 pb-3">
           <div>
@@ -638,7 +712,7 @@ export default function MarketplaceHome({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {INITIAL_MARKETPLACE_LISTINGS.slice(0, 3).map((prod) => (
+          {productsShown.map((prod: any) => (
             <div 
               key={prod.id}
               className="bg-slate-900/30 border border-slate-850 hover:border-slate-800 p-4 rounded-xl transition-all flex flex-col justify-between"
@@ -705,8 +779,10 @@ export default function MarketplaceHome({
           ))}
         </div>
       </section>
+      )}
 
       {/* 6. LATEST RFQS (Tenders and Material requirements) */}
+      {!live || rfqsShown.length > 0 && (
       <section className="px-4 md:px-6 max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between border-b border-slate-850 pb-3">
           <div>
@@ -726,7 +802,7 @@ export default function MarketplaceHome({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {INITIAL_RFQS.slice(0, 2).map((rfq) => (
+          {rfqsShown.map((rfq: any) => (
             <div 
               key={rfq.id}
               className="bg-slate-900/30 border border-slate-850 hover:border-slate-800 p-4 rounded-xl transition-all flex flex-col justify-between"
@@ -780,8 +856,10 @@ export default function MarketplaceHome({
           ))}
         </div>
       </section>
+      )}
 
       {/* 7. BUSINESS OPPORTUNITIES */}
+      {!live || oppsShown.length > 0 && (
       <section className="px-4 md:px-6 max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between border-b border-slate-850 pb-3">
           <div>
@@ -801,7 +879,7 @@ export default function MarketplaceHome({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {INITIAL_OPPORTUNITIES.slice(0, 2).map((opp) => (
+          {oppsShown.map((opp: any) => (
             <div 
               key={opp.id}
               className="bg-slate-900/30 border border-slate-850 hover:border-slate-800 p-4 rounded-xl transition-all flex flex-col justify-between"
@@ -842,8 +920,10 @@ export default function MarketplaceHome({
           ))}
         </div>
       </section>
+      )}
 
       {/* 8. TOP CITIES */}
+      {!live || (summary?.cities?.length ?? 0) > 0 && (
       <section className="px-4 md:px-6 max-w-7xl mx-auto space-y-6">
         <div className="border-b border-slate-850 pb-3">
           <h3 className="text-lg font-extrabold text-white flex items-center gap-2 font-display">
@@ -854,7 +934,7 @@ export default function MarketplaceHome({
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-          {POPULAR_CITIES.map((city, index) => (
+          {(live ? (summary?.cities ?? []).map((c: any, i: number) => ({ ...POPULAR_CITIES[i % POPULAR_CITIES.length], name: c.name, state: '', count: `${c.count} ${c.count === 1 ? 'business' : 'businesses'}` })) : POPULAR_CITIES).map((city: any, index: number) => (
             <div 
               key={index}
               onClick={() => {
@@ -870,6 +950,7 @@ export default function MarketplaceHome({
           ))}
         </div>
       </section>
+      )}
 
       {/* 9. WHY REALTYCONNECT (Value Proposition) */}
       <section className="px-4 md:px-6 max-w-7xl mx-auto">
@@ -882,14 +963,14 @@ export default function MarketplaceHome({
               Why Real Estate Businesses Trust RealtyConnect™
             </h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              We eliminate traditional middleman markups by connecting builders, contractors, and material suppliers directly, backed by robust statutory verification and trusted B2B credentials.
+              Builders, contractors and suppliers deal with each other directly. Companies can submit their GSTIN, PAN and documents for review, and only reviewed companies carry the Verified badge.
             </p>
             <div className="pt-2">
               <button 
                 onClick={onTriggerOnboarding}
                 className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold inline-flex items-center gap-1 group cursor-pointer"
               >
-                <span>Learn about our Verification Standards</span>
+                <span>Create your company account</span>
                 <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
               </button>
             </div>
@@ -898,8 +979,8 @@ export default function MarketplaceHome({
           <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
               { title: "Direct Contact, Zero Commissions", desc: "Negotiate raw material quotes, subcontracting fees, and service pricing directly with verified stakeholders.", icon: DollarSign },
-              { title: "Verified RERA & GSTIN", desc: "Every profile undergoes verification of Indian statutory registrations to ensure zero fake listings.", icon: CheckCircle2 },
-              { title: "Verified Trust & Compliance", desc: "Transparent business credentials, verified client reviews, and authenticated statutory registration records.", icon: ShieldCheck },
+              { title: "Verified RERA & GSTIN", desc: "Companies submit GSTIN, PAN and supporting documents; our team reviews them before the Verified badge is shown.", icon: CheckCircle2 },
+              { title: "Verified Trust & Compliance", desc: "Business credentials and peer reviews from other registered companies are shown on every profile.", icon: ShieldCheck },
               { title: "Unified CRM & Operations", desc: "Synchronize leads, manage project deliverables, and trace supplier inventories all inside one platform.", icon: Layers }
             ].map((prop, idx) => {
               const Icon = prop.icon;
@@ -917,56 +998,52 @@ export default function MarketplaceHome({
         </div>
       </section>
 
+      {/* About */}
+      <section id="about-realtyconnect-section" className="px-4 md:px-6 max-w-4xl mx-auto space-y-3 text-center">
+        <h3 className="text-lg sm:text-xl font-extrabold text-white font-display">About RealtyConnect</h3>
+        <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+          RealtyConnect is a business network for India's real estate industry. Builders, developers, contractors, suppliers, consultants and banks list their companies,
+          find each other, exchange enquiries, quotations and meetings, and run their own projects, procurement, inventory, finance and people from the same workspace.
+          It is built and operated by MultiSarv India Pvt. Ltd.
+        </p>
+      </section>
+
       {/* 10. MEMBERSHIP PLANS (Pricing matrix) */}
       <section id="membership-plans-section" className="px-4 md:px-6 max-w-7xl mx-auto space-y-6">
         <div className="border-b border-slate-850 pb-3 text-center max-w-2xl mx-auto space-y-1.5">
           <span className="text-[9.5px] font-mono text-emerald-400 uppercase tracking-widest font-extrabold">Grow Your B2B Presence</span>
           <h3 className="text-lg sm:text-xl font-extrabold text-white font-display">
-            Premium Corporate Membership Plans
+            Plans and pricing
           </h3>
-          <p className="text-xs text-slate-400">Unlock verified badges, top-tier search visibility, and advanced CRM integrations.</p>
+          <p className="text-xs text-slate-400">Start free and upgrade when you need more people, storage and modules. Paid plans are billed in INR plus 18% GST.</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {[
-            { name: "Bronze Member", price: "Free", period: "Forever", features: ["Basic Business Directory Listing", "Standard Search Visibility", "Receive up to 5 RFQ Inquiries/mo", "Public Project Portfolio Tab", "Multi-User Access"], color: "border-slate-850 bg-slate-900/20 text-slate-400", button: "Get Started Free", premium: false },
-            { name: "Silver Member", price: "₹12,500", period: "Per Year", features: ["Bronze Features Included", "Verified Supplier Badge", "Double Search Visibility Matrix", "Unrestricted RFQ Inquiries", "Standard CRM & Lead Pipeline", "Up to 3 Team Member Seats"], color: "border-blue-900/30 bg-blue-950/5 text-blue-400", button: "Upgrade to Silver", premium: true },
-            { name: "Gold Corporate", price: "₹24,000", period: "Per Year", features: ["Silver Features Included", "Premium Seller Badge", "Triple Search Rank Booster", "Direct B2B Messaging Enabled", "Full Procurement & Materials Tools", "Up to 10 Team Member Seats"], color: "border-indigo-900/40 bg-indigo-950/10 text-indigo-400", button: "Subscribe Gold", premium: true },
-            { name: "Platinum Enterprise", price: "₹48,000", period: "Per Year", features: ["Gold Features Included", "Verified Platinum Badge", "Top-of-List Search Priority", "Custom JV Opportunity Creator", "Priority Account Management & Support", "Unlimited Seats & Custom CRM"], color: "border-emerald-900/40 bg-emerald-950/10 text-emerald-400", button: "Request Platinum", premium: true }
-          ].map((plan, idx) => (
-            <div 
-              key={idx}
-              className={`bg-slate-900/40 border rounded-xl p-5 transition-all flex flex-col justify-between hover:scale-102 ${plan.color}`}
-            >
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+          {PLANS.map(plan => (
+            <div key={plan.id} className="bg-slate-900/40 border border-slate-850 rounded-xl p-5 flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between border-b border-slate-850 pb-3">
+                <div className="border-b border-slate-850 pb-3">
                   <span className="text-xs font-extrabold text-slate-100">{plan.name}</span>
-                  {plan.premium && (
-                    <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-1.5 rounded font-mono font-bold uppercase">Pro</span>
-                  )}
                 </div>
-
                 <div className="py-4 font-display">
-                  <span className="text-2xl font-extrabold text-white">{plan.price}</span>
-                  {plan.period && <span className="text-[10px] font-mono text-slate-500 ml-1">/ {plan.period}</span>}
+                  <span className="text-2xl font-extrabold text-white">{plan.priceMonthly === 0 ? 'Free' : `₹${plan.priceMonthly.toLocaleString('en-IN')}`}</span>
+                  {plan.priceMonthly > 0 && <span className="text-[10px] font-mono text-slate-500 ml-1">/ month + GST</span>}
                 </div>
-
-                <ul className="space-y-2 text-[10.5px] text-slate-400">
-                  {plan.features.map((feat, fIdx) => (
-                    <li key={fIdx} className="flex items-start gap-1.5">
-                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                      <span>{feat}</span>
-                    </li>
-                  ))}
+                <p className="text-[11px] text-slate-400 leading-relaxed mb-3">{plan.description}</p>
+                <ul className="space-y-1.5 text-[10.5px] text-slate-400">
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" /><span>{plan.limits.users} team {plan.limits.users === 1 ? 'seat' : 'seats'}</span></li>
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" /><span>{plan.limits.storageMb >= 1024 ? `${plan.limits.storageMb / 1024} GB` : `${plan.limits.storageMb} MB`} document storage</span></li>
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" /><span>{plan.limits.listings < 0 ? 'Unlimited' : plan.limits.listings} marketplace listings</span></li>
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" /><span>{plan.limits.rfqsPerMonth < 0 ? 'Unlimited' : plan.limits.rfqsPerMonth} RFQs a month</span></li>
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" /><span>{plan.supportLevel}</span></li>
                 </ul>
               </div>
-
               <button
                 type="button"
-                onClick={() => handleProtectedAction('Subscription Upgrade', `Plan: ${plan.name}`)}
+                onClick={onTriggerOnboarding}
                 className="w-full mt-6 bg-slate-950 hover:bg-slate-850 text-slate-200 hover:text-white py-1.5 text-xs font-semibold rounded-lg border border-slate-800 transition-all cursor-pointer"
               >
-                {plan.button}
+                {plan.priceMonthly === 0 ? 'Start free' : 'Sign up, then choose this plan'}
               </button>
             </div>
           ))}
@@ -974,6 +1051,7 @@ export default function MarketplaceHome({
       </section>
 
       {/* 11. CUSTOMER SUCCESS STORIES */}
+      {!live && (
       <section className="px-4 md:px-6 max-w-4xl mx-auto space-y-6">
         <div className="border-b border-slate-850 pb-3 text-center">
           <h3 className="text-lg font-extrabold text-white font-display">
@@ -1006,8 +1084,10 @@ export default function MarketplaceHome({
           ))}
         </div>
       </section>
+      )}
 
       {/* 12. INDUSTRY UPDATES */}
+      {!live && (
       <section className="px-4 md:px-6 max-w-7xl mx-auto space-y-6">
         <div className="border-b border-slate-850 pb-3">
           <h3 className="text-lg font-extrabold text-white flex items-center gap-2 font-display">
@@ -1044,6 +1124,7 @@ export default function MarketplaceHome({
           ))}
         </div>
       </section>
+      )}
 
       {/* 13. CONTACT FORM SECTION (Leads registration) */}
       <section id="contact-us-section" className="px-4 md:px-6 max-w-3xl mx-auto">
@@ -1132,8 +1213,7 @@ export default function MarketplaceHome({
               India's Integrated Real Estate Business Network—a unified platform where every stakeholder in the real estate ecosystem can discover, connect, collaborate, buy, sell, hire, finance, and manage business operations.
             </p>
             <p className="text-[10px] text-slate-600 font-mono">
-              Designed & Managed by MultiSarv India Pvt. Ltd. <br/>
-              ISO 9001:2015 & RERA Feasibility Audited.
+              Built and operated by MultiSarv India Pvt. Ltd.{!live && <><br/>ISO 9001:2015 & RERA Feasibility Audited.</>}
             </p>
           </div>
 
@@ -1149,9 +1229,9 @@ export default function MarketplaceHome({
           </div>
 
           <div className="md:col-span-3 space-y-2 text-xs">
-            <h5 className="font-extrabold text-white text-[11px] tracking-wider uppercase font-mono">Verified Cities</h5>
+            <h5 className="font-extrabold text-white text-[11px] tracking-wider uppercase font-mono">{live ? 'Cities' : 'Verified Cities'}</h5>
             <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-              {['Mumbai MH', 'Bangalore KA', 'Delhi NCR', 'Hyderabad TS', 'Pune MH', 'Chennai TN'].map((c) => (
+              {(live ? (summary?.cities ?? []).map((c: any) => c.name) : ['Mumbai MH', 'Bangalore KA', 'Delhi NCR', 'Hyderabad TS', 'Pune MH', 'Chennai TN']).map((c: string) => (
                 <button
                   key={c}
                   onClick={() => onSearchGlobal('', 'All', c.split(' ')[0])}

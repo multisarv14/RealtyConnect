@@ -192,6 +192,218 @@ test('a registered company appears in the directory and owns its profile', async
   assert.ok(!(await call('GET', '/companies')).data.some(c => c.id === idA), 'private companies leave the directory');
 });
 
+test('companies can reach each other: connections, enquiries, messages, bids, meetings', async () => {
+  const a = await register('net-a', 'MATERIAL_SUPPLIER');
+  const b = await register('net-b');
+  const A = a.session.orgId, B = b.session.orgId;
+  const read = async (who, key) => (await call('GET', `/store?keys=${key}`, { token: who.token })).data.values[key];
+
+  // connection request: B -> A
+  const req1 = await call('POST', '/network/connections', { token: b.token, body: { toOrgId: A, purpose: 'Steel supply' } });
+  assert.equal(req1.status, 201, JSON.stringify(req1.data));
+  assert.equal(req1.data.status, 'pending_outgoing');
+  assert.equal((await call('POST', '/network/connections', { token: b.token, body: { toOrgId: A } })).status, 409);
+  const incoming = (await read(a, 'rc_net_connections')).find(c => c.businessId === B);
+  assert.equal(incoming.status, 'pending_incoming');
+  assert.equal(incoming.businessName.startsWith('net-b'), true);
+  assert.equal((await call('POST', `/network/connections/${incoming.id}/respond`, { token: b.token, body: { accept: true } })).status, 404, 'only the recipient can respond');
+  assert.equal((await call('POST', `/network/connections/${incoming.id}/respond`, { token: a.token, body: { accept: true } })).status, 200);
+  assert.equal((await read(b, 'rc_net_connections')).find(c => c.businessId === A).status, 'accepted');
+
+  // enquiry: B -> A becomes a lead and a conversation in A
+  const enq = await call('POST', '/network/enquiries', { token: b.token, body: { toOrgId: A, kind: 'product', subject: 'TMT bars quote', message: 'Need 80 tons Fe550D', phone: '+91 90000 00000', relatedId: 'L-1', relatedTitle: 'Fe550D' } });
+  assert.equal(enq.status, 201, JSON.stringify(enq.data));
+  const lead = (await read(a, 'realtyconnect_leads')).find(l => l.id === enq.data.id);
+  assert.equal(lead.status, 'New');
+  assert.equal(lead.company.startsWith('net-b'), true, 'the lead names the real sender');
+  assert.equal((await read(a, 'realtyconnect_product_enquiries'))[0].buyerCompany.startsWith('net-b'), true);
+  const convA = (await read(a, 'realtyconnect_conversations')).find(c => c.id === enq.data.conversationId);
+  assert.equal(convA.unreadCount, 1);
+  assert.equal(convA.companyId, B);
+
+  // A replies on the same conversation; B receives it and A's message shows as read after B opens it
+  assert.equal((await call('POST', '/network/messages', { token: a.token, body: { toOrgId: B, conversationId: convA.id, messageId: 'm-reply-1', text: 'Quote attached, valid 7 days.' } })).status, 201);
+  const convB = (await read(b, 'realtyconnect_conversations')).find(c => c.id === convA.id);
+  assert.equal(convB.messages.at(-1).text, 'Quote attached, valid 7 days.');
+  assert.equal(convB.messages.at(-1).sender, 'them');
+  // delivering the same message twice does not duplicate it
+  await call('POST', '/network/messages', { token: a.token, body: { toOrgId: B, conversationId: convA.id, messageId: 'm-reply-1', text: 'Quote attached, valid 7 days.' } });
+  assert.equal((await read(b, 'realtyconnect_conversations')).find(c => c.id === convA.id).messages.filter(m => m.id === 'm-reply-1').length, 1);
+
+  // RFQ bid: A bids on B's RFQ; B accepts; A's copy follows
+  const bid = await call('POST', '/network/bids', { token: a.token, body: { toOrgId: B, bidId: 'bid-1', rfqId: 'rfq-1', rfqTitle: 'Steel', quotationAmount: 'INR 54,500/MT', remarks: 'Ex-works' } });
+  assert.equal(bid.status, 201);
+  const received = (await read(b, 'realtyconnect_quotation_list')).find(q => q.id === 'bid-1');
+  assert.equal(received.companyId, A);
+  assert.equal(received.status, 'Pending');
+  assert.equal((await call('POST', '/network/bids/bid-1/status', { token: a.token, body: { status: 'Accepted' } })).status, 404, 'the bidder cannot accept its own bid');
+  assert.equal((await call('POST', '/network/bids/bid-1/status', { token: b.token, body: { status: 'Accepted' } })).status, 200);
+  assert.equal((await read(a, 'realtyconnect_quotation_list')).find(q => q.id === 'bid-1').status, 'Accepted');
+
+  // meeting invite
+  assert.equal((await call('POST', '/network/meetings', { token: b.token, body: { toOrgId: A, meetingId: 'mt-1', title: 'Site visit', meetingDate: '2026-11-02', startTime: '11:00', endTime: '12:00' } })).status, 201);
+  assert.equal((await read(a, 'realtyconnect_meetings')).find(m => m.id === 'mt-1').relatedCompany.startsWith('net-b'), true);
+
+  // notifications reached A, and nobody can address themselves or a stranger
+  assert.ok((await call('GET', '/notifications', { token: a.token })).data.length >= 4);
+  assert.equal((await call('POST', '/network/messages', { token: a.token, body: { toOrgId: A, conversationId: 'x', messageId: 'y', text: 'hi' } })).status, 400);
+  assert.equal((await call('POST', '/network/messages', { token: a.token, body: { toOrgId: '0123456789abcdef01234567', conversationId: 'x', messageId: 'y', text: 'hi' } })).status, 404);
+  assert.equal((await call('POST', '/network/messages', { body: {} })).status, 401);
+});
+
+test('a company cannot overwrite another company\'s public listing', async () => {
+  const a = await register('own-a'), b = await register('own-b');
+  const key = 'rc_opportunities';
+  await call('PATCH', `/store/${key}`, { token: a.token, body: { type: 'list', upsert: [{ id: `opp-${run}`, title: 'Original' }], remove: [] } });
+  const hijack = await call('PATCH', `/store/${key}`, { token: b.token, body: { type: 'list', upsert: [{ id: `opp-${run}`, title: 'Hijacked' }], remove: [] } });
+  assert.equal(hijack.status, 403);
+  assert.equal((await call('GET', '/store', { token: a.token })).data.values[key].find(o => o.id === `opp-${run}`).title, 'Original');
+  await call('PATCH', `/store/${key}`, { token: a.token, body: { type: 'list', upsert: [], remove: [`opp-${run}`] } });
+});
+
+test('teams: invitations join the same company, roles limit what a person can change', async () => {
+  const owner = await register('team-own', 'BUILDER');
+  assert.equal(owner.session.orgRole, 'OWNER');
+  const invite = await call('POST', '/team/invites', { token: owner.token, body: { email: `viewer-${run}@smoke.test`, name: 'View Only', orgRole: 'VIEWER' } });
+  assert.equal(invite.status, 201, JSON.stringify(invite.data));
+  assert.ok(invite.data.code);
+  // The Free plan has two seats: the owner plus this invitation. A third is refused.
+  assert.equal((await call('POST', '/team/invites', { token: owner.token, body: { email: `extra-${run}@smoke.test`, orgRole: 'MEMBER' } })).status, 402);
+
+  const wrongEmail = await call('POST', '/auth/register', { body: { email: `someone-${run}@smoke.test`, password: STRONG_PASSWORD, inviteCode: invite.data.code } });
+  assert.equal(wrongEmail.status, 400, 'an invitation only works for the invited email');
+  const joined = await call('POST', '/auth/register', { body: { email: `viewer-${run}@smoke.test`, password: STRONG_PASSWORD, inviteCode: invite.data.code } });
+  assert.equal(joined.status, 201, JSON.stringify(joined.data));
+  assert.equal(joined.data.session.orgId, owner.session.orgId, 'the invited person joins the inviting company');
+  assert.equal(joined.data.session.orgRole, 'VIEWER');
+  assert.equal(joined.data.session.name, 'View Only');
+  assert.equal((await call('POST', '/auth/register', { body: { email: `viewer-${run}@smoke.test`, password: STRONG_PASSWORD, inviteCode: invite.data.code } })).status, 409, 'an invitation is single-use');
+
+  // A viewer sees the company's data but cannot change it or manage the team
+  assert.equal((await call('PATCH', '/store/realtyconnect_leads', { token: joined.data.accessToken, body: { type: 'list', upsert: [{ id: 'v1' }], remove: [] } })).status, 403);
+  assert.equal((await call('PATCH', '/store/realtyconnect_saved_listings', { token: joined.data.accessToken, body: { type: 'value', value: ['x'] } })).status, 200, 'personal preferences are still allowed');
+  assert.equal((await call('POST', '/team/invites', { token: joined.data.accessToken, body: { email: `x-${run}@smoke.test` } })).status, 403);
+  assert.equal((await call('PUT', '/companies/me', { token: joined.data.accessToken, body: { tagline: 'hijack' } })).status, 403);
+
+  const team = (await call('GET', '/team', { token: owner.token })).data;
+  assert.equal(team.members.length, 2);
+  const viewer = team.members.find(m => m.orgRole === 'VIEWER');
+  assert.equal((await call('PATCH', `/team/members/${viewer.id}`, { token: owner.token, body: { orgRole: 'MEMBER' } })).status, 200);
+  assert.equal((await call('PATCH', `/team/members/${team.members.find(m => m.orgRole === 'OWNER').id}`, { token: owner.token, body: { status: 'INACTIVE' } })).status, 400, 'you cannot lock yourself out');
+
+  // Deactivating ends the person's sessions
+  await call('PATCH', `/team/members/${viewer.id}`, { token: owner.token, body: { status: 'INACTIVE' } });
+  assert.equal((await call('POST', '/auth/refresh', { cookie: joined.cookie })).status, 401);
+  assert.equal((await call('POST', '/auth/login', { body: { email: `viewer-${run}@smoke.test`, password: STRONG_PASSWORD } })).status, 403);
+});
+
+test('plans: modules and limits are enforced on the server, and upgrades need confirmed payment', async () => {
+  const co = await register('plan-co', 'BUILDER');
+  assert.equal(co.session.plan.id, 'plan-free');
+  const finance = await call('PATCH', '/store/realtyconnect_finance_billings', { token: co.token, body: { type: 'list', upsert: [{ id: 'i1' }], remove: [] } });
+  assert.equal(finance.status, 402, 'Free does not include finance');
+  // Free plan: 5 marketplace listings
+  const listings = n => Array.from({ length: n }, (_, i) => ({ id: `lst-${run}-${i}`, title: 'x' }));
+  assert.equal((await call('PATCH', '/store/realtyconnect_marketplace_listings', { token: co.token, body: { type: 'list', upsert: listings(5), remove: [] } })).status, 200);
+  assert.equal((await call('PATCH', '/store/realtyconnect_marketplace_listings', { token: co.token, body: { type: 'list', upsert: [{ id: `lst-${run}-extra`, title: 'x' }], remove: [] } })).status, 402);
+  await call('PATCH', '/store/realtyconnect_marketplace_listings', { token: co.token, body: { type: 'list', upsert: [], remove: listings(5).map(l => l.id) } });
+
+  const order = await call('POST', '/billing/orders', { token: co.token, body: { planId: 'plan-enterprise', cycle: 'monthly' } });
+  assert.equal(order.status, 201, JSON.stringify(order.data));
+  assert.equal(order.data.payment.total, Math.round(29999 * 1.18));
+  assert.equal(order.data.payment.status, 'pending');
+  let billing = (await call('GET', '/billing', { token: co.token })).data;
+  assert.equal(billing.planId, 'plan-free', 'asking for a plan does not give it');
+  assert.equal(billing.payments[0].invoiceNo, order.data.payment.invoiceNo);
+  assert.equal((await call('POST', '/billing/razorpay/verify', { token: co.token, body: { razorpay_order_id: 'o', razorpay_payment_id: 'p', razorpay_signature: 's' } })).status, 400);
+  assert.equal((await call('GET', '/billing/admin/pending', { token: co.token })).status, 403, 'customers cannot see the confirmation queue');
+  assert.equal((await call('POST', `/billing/admin/${order.data.payment.id}/confirm`, { token: co.token, body: { method: 'UPI', reference: 'self-confirm' } })).status, 403, 'a company cannot confirm its own payment');
+
+  const admin = await loginDemo('admin@realtyconnect.com');
+  const pending = (await call('GET', '/billing/admin/pending', { token: admin.token })).data;
+  assert.ok(pending.some(p => p.id === order.data.payment.id && p.company.startsWith('plan-co')));
+  assert.equal((await call('POST', `/billing/admin/${order.data.payment.id}/confirm`, { token: admin.token, body: { method: 'Bank transfer', reference: 'UTR123456' } })).status, 200);
+
+  billing = (await call('GET', '/billing', { token: co.token })).data;
+  assert.equal(billing.planId, 'plan-enterprise');
+  assert.equal(billing.payments[0].status, 'paid');
+  assert.equal((await call('PATCH', '/store/realtyconnect_finance_billings', { token: co.token, body: { type: 'list', upsert: [{ id: 'i1' }], remove: [] } })).status, 200, 'finance works after the upgrade');
+  const refreshed = await call('POST', '/auth/refresh', { cookie: co.cookie });
+  assert.ok(refreshed.data.session.plan.features.includes('finance'));
+});
+
+test('verification: IDs are validated, documents attached, and only a reviewer can verify a company', async () => {
+  const co = await register('verif-co', 'MATERIAL_SUPPLIER');
+  const upload = async (name) => {
+    const form = new FormData();
+    form.append('file', new Blob(['%PDF-1.4 ' + name]), name);
+    const res = await fetch(API + '/files', { method: 'POST', headers: { Authorization: `Bearer ${co.token}` }, body: form });
+    return (await res.json()).id;
+  };
+  const [f1, f2] = [await upload('gst.pdf'), await upload('pan.pdf')];
+  const docs = [{ fileId: f1, label: 'GST registration certificate' }, { fileId: f2, label: 'PAN card' }];
+
+  assert.equal((await call('PUT', '/verification', { token: co.token, body: { gstin: '27AAPFU0939F1ZX', pan: 'AAPFU0939F' } })).status, 400, 'a wrong check digit is caught');
+  assert.equal((await call('PUT', '/verification', { token: co.token, body: { gstin: '27AAPFU0939F1ZV', pan: 'ZZZZZ9999Z' } })).status, 400, 'the PAN must match the GSTIN');
+  assert.equal((await call('PUT', '/verification', { token: co.token, body: { gstin: '27AAPFU0939F1ZV', pan: 'AAPFU0939F', documents: [{ fileId: '0123456789abcdef01234567', label: 'x' }] } })).status, 400, 'documents must be your own uploads');
+  assert.equal((await call('POST', '/verification/submit', { token: co.token })).status, 400, 'nothing saved yet');
+
+  await new Promise(r => setTimeout(r, 2600)); // uploads leave quarantine
+  const saved = await call('PUT', '/verification', { token: co.token, body: { gstin: '27AAPFU0939F1ZV', pan: 'AAPFU0939F', documents: docs } });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  assert.equal((await call('POST', '/verification/submit', { token: co.token })).status, 200);
+  assert.equal((await call('PUT', '/verification', { token: co.token, body: { gstin: '27AAPFU0939F1ZV', pan: 'AAPFU0939F' } })).status, 409, 'no edits while under review');
+
+  assert.equal((await call('GET', '/verification/admin/queue', { token: co.token })).status, 403);
+  assert.equal((await call('POST', `/verification/admin/${co.session.orgId}/approve`, { token: co.token, body: {} })).status, 403, 'a company cannot verify itself');
+  const admin = await loginDemo('admin@realtyconnect.com');
+  const queue = (await call('GET', '/verification/admin/queue', { token: admin.token })).data;
+  const entry = queue.find(q => q.orgId === co.session.orgId);
+  assert.ok(entry && entry.documents.length === 2);
+  // the reviewer can open the documents
+  const doc = await fetch(API + `/files/${f1}/download`, { headers: { Authorization: `Bearer ${admin.token}` } });
+  assert.equal(doc.status, 200);
+
+  assert.equal((await call('POST', `/verification/admin/${co.session.orgId}/reject`, { token: admin.token, body: { note: '' } })).status, 400, 'a rejection needs a reason');
+  assert.equal((await call('POST', `/verification/admin/${co.session.orgId}/approve`, { token: admin.token, body: {} })).status, 200);
+  const card = (await call('GET', '/companies')).data.find(c => c.id === co.session.orgId);
+  assert.equal(card.verified, true);
+  assert.equal(card.gstVerified, true);
+  assert.equal((await call('GET', `/companies/${co.session.orgId}`, { token: co.token })).data.gstin, '27AAPFU0939F1ZV');
+  assert.equal((await call('POST', '/auth/refresh', { cookie: co.cookie })).data.session.verified, true);
+  // profile edits can no longer change verified identifiers
+  await call('PUT', '/companies/me', { token: co.token, body: { gstin: '99AAAAA0000A1Z5', tagline: 'ok' } });
+  assert.equal((await call('GET', `/companies/${co.session.orgId}`, { token: co.token })).data.gstin, '27AAPFU0939F1ZV');
+});
+
+test('blocking and reporting: blocked companies cannot make contact, reports reach a reviewer who can suspend', async () => {
+  const a = await register('mod-a', 'MATERIAL_SUPPLIER'), b = await register('mod-b');
+  const A = a.session.orgId, B = b.session.orgId;
+  const message = (who, to) => call('POST', '/network/messages', { token: who.token, body: { toOrgId: to, conversationId: 'c-' + run, messageId: 'm-' + Math.random(), text: 'hello' } });
+
+  assert.equal((await message(b, A)).status, 201);
+  assert.equal((await call('POST', '/network/blocks', { token: a.token, body: { orgId: B } })).status, 201);
+  assert.equal((await message(b, A)).status, 403, 'the blocked company cannot write');
+  assert.equal((await message(a, B)).status, 403, 'and the blocker cannot either, until unblocked');
+  assert.deepEqual((await call('GET', '/network/blocks', { token: a.token })).data, [B]);
+  await call('DELETE', `/network/blocks/${B}`, { token: a.token });
+  assert.equal((await message(b, A)).status, 201);
+
+  const report = await call('POST', '/network/reports', { token: b.token, body: { orgId: A, reason: 'Spam', details: 'Sends unsolicited offers' } });
+  assert.equal(report.status, 201);
+  assert.equal((await call('GET', '/moderation/reports', { token: b.token })).status, 403);
+  const admin = await loginDemo('admin@realtyconnect.com');
+  const open = (await call('GET', '/moderation/reports', { token: admin.token })).data.find(r => r.id === report.data.id);
+  assert.equal(open.reason, 'Spam');
+  assert.ok(open.reported.startsWith('mod-a') && open.reporter.startsWith('mod-b'));
+  assert.equal((await call('POST', `/moderation/reports/${report.data.id}/resolve`, { token: admin.token, body: { action: 'suspend', note: 'Repeated spam' } })).status, 200);
+  assert.ok(!(await call('GET', '/companies')).data.some(c => c.id === A), 'a suspended company leaves the directory');
+  assert.equal((await message(a, B)).status, 403, 'and cannot contact anyone');
+  assert.equal((await call('POST', `/moderation/companies/${A}/restore`, { token: admin.token })).status, 200);
+  assert.ok((await call('GET', '/companies')).data.some(c => c.id === A));
+  assert.equal((await message(a, B)).status, 201);
+});
+
 test('RBAC guards platform administration', async () => {
   const builder = await loginDemo('builder@realtyconnect.com');
   const admin = await loginDemo('admin@realtyconnect.com');

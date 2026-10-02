@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { appStore } from './appStore';
 
 /**
@@ -22,5 +22,36 @@ export function usePersistentState<T>(key: string, initial: T | (() => T)): [T, 
     appStore.setItem(key, JSON.stringify(state));
   }, [key, state]);
 
+  // Another person's change (e.g. a request delivered to this company) arrives through refresh().
+  useEffect(() => appStore.onChange(changed => {
+    if (changed !== key) return;
+    const saved = appStore.getItem(key);
+    if (saved === null) return;
+    try {
+      setState(JSON.parse(saved) as T);
+    } catch {
+      // keep the current state
+    }
+  }), [key]);
+
   return [state, setState];
+}
+
+/**
+ * For modules that keep their own state: calls `apply` with the new value whenever the server copy
+ * of `key` is replaced by a refresh.
+ */
+export function useStoreSync<T>(key: string, apply: (value: T) => void): void {
+  const latest = useRef(apply);
+  latest.current = apply;
+  useEffect(() => appStore.onChange(changed => {
+    if (changed !== key) return;
+    const saved = appStore.getItem(key);
+    if (saved === null) return;
+    try {
+      latest.current(JSON.parse(saved) as T);
+    } catch {
+      // ignore unreadable data
+    }
+  }), [key]);
 }

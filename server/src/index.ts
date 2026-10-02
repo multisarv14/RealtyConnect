@@ -3,6 +3,7 @@ import { createApp } from './app';
 import { config } from './config';
 import { resumeQuarantine } from './routes/files';
 import { ensureStoreIndexes } from './routes/store';
+import { startReminderWorker } from './services/reminders';
 import { seedDatabase } from './services/seed';
 
 async function main() {
@@ -17,7 +18,10 @@ async function main() {
     console.log(`[api] RealtyConnect API listening on port ${config.port}`);
   });
 
+  const stopReminders = startReminderWorker();
+
   const shutdown = () => {
+    stopReminders();
     server.close(() => {
       mongoose.disconnect().finally(() => process.exit(0));
     });

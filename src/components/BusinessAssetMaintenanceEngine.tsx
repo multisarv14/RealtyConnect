@@ -4,6 +4,7 @@
  */
 
 import { appStore } from '../lib/appStore';
+import { downloadCsv } from '../lib/exportFile';
 import React, { useState, useEffect } from 'react';
 import { 
   Wrench, Plus, Search, Filter, Calendar, FileText, Briefcase, Users, 
@@ -1556,7 +1557,21 @@ export default function BusinessAssetMaintenanceEngine({
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-lg font-bold text-white font-mono">{rep.count}</span>
                     <button 
-                      onClick={() => showToast(`Generating exportable PDF/Excel template for ${rep.title}...`, 'info')}
+                      onClick={() => {
+                        const assetCols = [{ key: 'id', label: 'Asset' }, { key: 'name', label: 'Name' }, { key: 'category', label: 'Category' }, { key: 'serialNumber', label: 'Serial no.' }, { key: 'purchaseCost', label: 'Purchase cost' }, { key: 'assignedProjectName', label: 'Project' }, { key: 'status', label: 'Status' }];
+                        const serviceCols = [{ key: 'requestNumber', label: 'Request' }, { key: 'assetName', label: 'Asset' }, { key: 'serviceType', label: 'Type' }, { key: 'priority', label: 'Priority' }, { key: 'status', label: 'Status' }, { key: 'assignedTechnicianName', label: 'Technician' }, { key: 'scheduledDate', label: 'Scheduled' }, { key: 'completedDate', label: 'Completed' }, { key: 'serviceCost', label: 'Cost' }];
+                        const contractCols = Object.keys((contracts[0] as unknown as Record<string, unknown>) || {}).filter(k => typeof (contracts[0] as any)[k] !== 'object').map(k => ({ key: k, label: k }));
+                        const sets: Record<string, { cols: { key: string; label: string }[]; rows: Record<string, unknown>[] }> = {
+                          'Asset Register Report': { cols: assetCols, rows: assets as unknown as Record<string, unknown>[] },
+                          'Asset Allocation Report': { cols: assetCols, rows: (assets as unknown as Record<string, unknown>[]).filter(a => a.assignedProjectName) },
+                          'Maintenance Report': { cols: serviceCols, rows: services as unknown as Record<string, unknown>[] },
+                          'AMC Contracts Audit': { cols: contractCols, rows: contracts as unknown as Record<string, unknown>[] }
+                        };
+                        const data = sets[rep.title];
+                        if (!data || data.rows.length === 0) return showToast(`There is nothing to include in "${rep.title}" yet.`, 'info');
+                        downloadCsv(`${rep.title.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}`, data.cols, data.rows);
+                        onLogTriggered('ASSET_REPORT_EXPORTED', 'reports', rep.title, 'SUCCESS', `Exported "${rep.title}" (${data.rows.length} rows)`);
+                      }}
                       className="px-2 py-0.5 bg-slate-950 text-indigo-400 border border-slate-800 rounded text-[10px] font-mono hover:bg-slate-900"
                     >
                       Export

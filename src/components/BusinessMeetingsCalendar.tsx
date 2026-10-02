@@ -1,5 +1,8 @@
 import { currentUserName } from '../lib/identity';
 import { appStore } from '../lib/appStore';
+import { useStoreSync } from '../lib/usePersistentState';
+import { api } from '../lib/api';
+import { isRegisteredCompanyId } from '../lib/companies';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
@@ -176,6 +179,9 @@ export default function BusinessMeetingsCalendar({
   useEffect(() => {
     appStore.setItem('realtyconnect_meetings', JSON.stringify(meetings));
   }, [meetings]);
+
+  // Invitations from other companies appear without a reload.
+  useStoreSync<CalendarMeeting[]>('realtyconnect_meetings', setMeetings);
 
   // Main navigation tabs: 'directory' (Directory, Card, List views) or 'calendar'
   const [activeTab, setActiveTab] = useState<'directory' | 'calendar'>('calendar');
@@ -502,6 +508,22 @@ export default function BusinessMeetingsCalendar({
       };
 
       setMeetings([newMeeting, ...meetings]);
+      if (isRegisteredCompanyId(newMeeting.companyId)) {
+        // A company on RealtyConnect gets the invitation in its own calendar.
+        api('POST', '/network/meetings', {
+          toOrgId: newMeeting.companyId,
+          meetingId: newMeeting.id,
+          title: newMeeting.title,
+          meetingType: newMeeting.meetingType,
+          meetingDate: newMeeting.meetingDate,
+          startTime: newMeeting.startTime,
+          endTime: newMeeting.endTime,
+          meetingMode: newMeeting.meetingMode,
+          location: newMeeting.location,
+          agenda: newMeeting.agenda
+        }).then(() => showToast(`Invitation delivered to ${newMeeting.relatedCompany}.`, 'success'))
+          .catch(() => showToast(`The invitation to ${newMeeting.relatedCompany} could not be delivered.`, 'error'));
+      }
       setSelectedMeetingId(newMeetingId);
       triggerNotification('scheduled', formTitle, formCompany, `${formDate} ${formStartTime}`);
       showToast(`Appointment registered for ${formCompany}!`, 'success');

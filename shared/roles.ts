@@ -84,6 +84,7 @@ export const STAKEHOLDER_ROLES: { [key: string]: string[] } = {
     'MANAGE_SYSTEM_CONFIGS',
     'MANAGE_COMMON_MASTERS',
     'VIEW_AUDIT_LOGS',
+    'VERIFY_PROFILES',
   ],
 };
 

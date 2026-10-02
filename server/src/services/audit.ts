@@ -59,8 +59,8 @@ export function auditRequest(
   actor?: { userId: string; userRole: string }
 ) {
   return appendAudit({
-    userId: actor?.userId ?? req.auth?.email ?? 'ANONYMOUS',
-    userRole: actor?.userRole ?? req.auth?.role ?? 'ANONYMOUS',
+    userId: actor?.userId || req.auth?.email || 'ANONYMOUS',
+    userRole: actor?.userRole || req.auth?.role || 'ANONYMOUS',
     action,
     entity,
     entityId,

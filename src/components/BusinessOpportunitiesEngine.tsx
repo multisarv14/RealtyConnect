@@ -3,8 +3,10 @@
  * A premium professional B2B Opportunity Exchange portal for real estate stakeholders.
  */
 
-import { currentOrgName } from '../lib/identity';
+import { currentOrgId, currentOrgName, currentOrgVerified } from '../lib/identity';
 import { appStore } from '../lib/appStore';
+import { api, errorMessage } from '../lib/api';
+import { isRegisteredCompanyId } from '../lib/companies';
 import { usePersistentState } from '../lib/usePersistentState';
 import React, { useState, useMemo } from 'react';
 import { 
@@ -418,12 +420,12 @@ export default function BusinessOpportunitiesEngine({
       title: formTitle,
       type: formType,
       category: formCategory,
-      companyId: 'user-comp-9',
+      companyId: currentOrgId() || 'user-comp-9',
       companyName: currentOrgName(),
       companyLogoBg: 'bg-emerald-600',
-      companyLogoText: userSession?.email ? userSession.email.substr(0, 2).toUpperCase() : 'MS',
-      verified: true,
-      premium: true,
+      companyLogoText: currentOrgName().substring(0, 2).toUpperCase(),
+      verified: currentOrgVerified(),
+      premium: false,
       description: formDescription,
       requiredProductsServices: formReqProducts,
       preferredPartnerType: formPrefPartner,
@@ -505,8 +507,8 @@ export default function BusinessOpportunitiesEngine({
       category: newOpp.category === 'Builders' ? 'Builders' : newOpp.category === 'Contractors' ? 'Contractors' : newOpp.category === 'Vendors' ? 'Material Vendors' : 'Consultants',
       logoBg: newOpp.companyLogoBg,
       logoText: newOpp.companyLogoText,
-      verified: true,
-      premium: true,
+      verified: currentOrgVerified(),
+      premium: false,
       timestamp: 'Just Now',
       postType: newOpp.type.includes('Material') ? 'Material Requirement' : 'RFQ Requirement',
       title: `B2B REQUIREMENT EXCHANGER: ${newOpp.title}`,
@@ -529,6 +531,31 @@ export default function BusinessOpportunitiesEngine({
     if (!responseModalOpp) return;
 
     const oppId = responseModalOpp.id;
+
+    if (isRegisteredCompanyId(responseModalOpp.companyId)) {
+      const opp = responseModalOpp;
+      // The company that posted the opportunity receives the response as a lead and a conversation.
+      api('POST', '/network/enquiries', {
+        toOrgId: opp.companyId,
+        kind: 'opportunity',
+        subject: `Response: ${opp.title}`.slice(0, 200),
+        category: opp.category,
+        message: [respSubmitProposalPlaceholder, respRemarks].filter(Boolean).join('\n\n') || 'We are interested in this opportunity.',
+        relatedId: opp.id,
+        relatedTitle: opp.title
+      })
+        .then(() => {
+          setRespondedOpps(prev => ({ ...prev, [oppId]: { proposalText: respSubmitProposalPlaceholder || 'Response sent', remarks: respRemarks, date: new Date().toISOString().split('T')[0] } }));
+          setResponseModalOpp(null);
+          setRespRemarks('');
+          setRespSubmitProposalPlaceholder('');
+          onLogTriggered('B2B_OPPORTUNITY_RESPONDED', 'opportunities', oppId, 'SUCCESS', `Responded to "${opp.title}" from ${opp.companyName}.`);
+          showToast(`Your response was delivered to ${opp.companyName}.`, 'success');
+        })
+        .catch(err => showToast(errorMessage(err), 'error'));
+      return;
+    }
+
     setRespondedOpps(prev => ({
       ...prev,
       [oppId]: {

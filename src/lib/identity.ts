@@ -14,4 +14,6 @@ export function setCurrentIdentity(session: Session | null): void {
 export const currentUserName = (): string => current?.name || current?.email || 'Guest';
 export const currentUserEmail = (): string => current?.email || '';
 export const currentOrgName = (): string => current?.organizationName || 'Guest';
+export const currentOrgCategory = (): string => current?.category || '';
+export const currentOrgVerified = (): boolean => !!current?.verified;
 export const currentOrgId = (): string | null => current?.orgId ?? null;

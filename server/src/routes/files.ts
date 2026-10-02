@@ -4,10 +4,12 @@ import path from 'node:path';
 import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config';
-import { asyncHandler, hasPermission, HttpError, requireAuth } from '../middleware/auth';
+import { asyncHandler, hasPermission, HttpError, requireAuth, requireOrgRole } from '../middleware/auth';
 import { UploadedFile } from '../models';
 import { auditRequest } from '../services/audit';
 import { getConfigNumber } from '../services/configs';
+import { planOf } from '../services/plans';
+import mongoose from 'mongoose';
 
 // Rule FILE-01: whitelist, verified against the file's leading bytes rather than the client's claim.
 const ALLOWED_TYPES = [
@@ -55,7 +57,8 @@ async function findAccessible(req: Parameters<typeof hasPermission>[0], id: stri
   const file = await UploadedFile.findById(id).catch(() => null);
   if (!file) throw new HttpError(404, 'File not found.');
   const sameOrg = String(file.orgId) === req.auth!.orgId;
-  if (!sameOrg && !(await hasPermission(req, 'VIEW_ALL_FILES'))) throw new HttpError(404, 'File not found.');
+  const shared = file.visibility === 'network' || (file.sharedWith || []).some(id => String(id) === req.auth!.orgId);
+  if (!sameOrg && !shared && !((await hasPermission(req, 'VIEW_ALL_FILES')) || (await hasPermission(req, 'VERIFY_PROFILES')))) throw new HttpError(404, 'File not found.');
   return file;
 }
 
@@ -65,13 +68,14 @@ filesRouter.use(requireAuth);
 filesRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const filter = (await hasPermission(req, 'VIEW_ALL_FILES')) ? {} : { orgId: req.auth!.orgId };
+    const filter = ((await hasPermission(req, 'VIEW_ALL_FILES')) || (await hasPermission(req, 'VERIFY_PROFILES'))) ? {} : { orgId: req.auth!.orgId };
     res.json((await UploadedFile.find(filter).sort({ createdAt: -1 }).limit(200).lean()).map(toClientFile));
   })
 );
 
 filesRouter.post(
   '/',
+  ...requireOrgRole('MEMBER'),
   asyncHandler(async (req, res) => {
     // Rule FILE-02: the ceiling is a runtime setting, so the parser is built per request.
     const maxMb = await getConfigNumber('MAX_UPLOAD_SIZE_MB', 10);
@@ -93,6 +97,13 @@ filesRouter.post(
     if (!type) {
       await auditRequest(req, 'SECURITY_FILE_REJECTED_UNSUPPORTED_TYPE', 'uploaded_files', name, 'FAILURE', 'File upload rejected: content is not a valid PDF, PNG or JPEG.');
       throw new HttpError(415, 'Unsupported file type. Only PDF, PNG and JPEG documents are permitted (Rule FILE-01).');
+    }
+
+    // The plan's storage allowance covers everything the company has uploaded.
+    const plan = await planOf(req.auth!.orgId);
+    const used = await UploadedFile.aggregate([{ $match: { orgId: new mongoose.Types.ObjectId(req.auth!.orgId) } }, { $group: { _id: null, bytes: { $sum: '$sizeBytes' } } }]);
+    if ((used[0]?.bytes ?? 0) + req.file.size > plan.limits.storageMb * 1024 * 1024) {
+      throw new HttpError(402, `The ${plan.name} plan includes ${plan.limits.storageMb >= 1024 ? `${plan.limits.storageMb / 1024} GB` : `${plan.limits.storageMb} MB`} of storage, and it is full. Delete files or upgrade your plan.`);
     }
 
     await fs.mkdir(config.uploadDir, { recursive: true });
@@ -130,6 +141,19 @@ filesRouter.get(
     if (file.status !== 'success') throw new HttpError(409, 'File has not been cleared for download.');
     res.type(file.mimeType);
     res.download(file.storagePath, file.name);
+  })
+);
+
+// Make a file you own readable by every signed-in company (RFQ and tender attachments).
+filesRouter.post(
+  '/:id/publish',
+  ...requireOrgRole('MEMBER'),
+  asyncHandler(async (req, res) => {
+    const file = await findAccessible(req, req.params.id);
+    if (String(file.orgId) !== req.auth!.orgId) throw new HttpError(403, 'Only the owning organization can publish this file.');
+    file.visibility = 'network';
+    await file.save();
+    res.json(toClientFile(file));
   })
 );
 

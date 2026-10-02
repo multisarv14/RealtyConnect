@@ -7,6 +7,8 @@ import { appStore } from '../lib/appStore';
 import { usePersistentState } from '../lib/usePersistentState';
 import { errorMessage, type AuthMeta, type RegisterInput, type Session } from '../lib/api';
 import { fetchCompanies, isRegisteredCompanyId } from '../lib/companies';
+import { api } from '../lib/api';
+import { MODULE_FEATURE } from '../../shared/plans';
 import { currentOrgName, currentUserEmail, currentUserName } from '../lib/identity';
 import type { Company } from './BusinessDirectory';
 import { passwordPolicyError } from '../../shared/roles';
@@ -159,13 +161,13 @@ const NAVIGATION_GROUPS: NavGroup[] = [
 
 const ROLE_NAV_ACCESS: Record<string, NavItem['id'][]> = {
   ADMIN: NAVIGATION_GROUPS.flatMap(group => group.items.map(item => item.id)),
-  BUILDER: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'opportunities', 'rfq_management', 'projects', 'procurement', 'lead_management', 'crm', 'marketplace'],
-  CONTRACTOR: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'projects', 'rfq_management', 'opportunities', 'lead_management', 'crm'],
-  MATERIAL_SUPPLIER: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'marketplace', 'inventory', 'rfq_management', 'opportunities', 'lead_management'],
-  CONSULTANT: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'lead_management', 'crm', 'security_compliance'],
-  BANK: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'lead_management', 'finance', 'crm'],
-  RECRUITER: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'hr_dms', 'lead_management'],
-  FACILITY_MANAGEMENT: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'assets_maintenance', 'projects']
+  BUILDER: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'opportunities', 'rfq_management', 'projects', 'procurement', 'lead_management', 'crm', 'marketplace', 'analytics_subscription', 'security_compliance'],
+  CONTRACTOR: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'projects', 'rfq_management', 'opportunities', 'lead_management', 'crm', 'analytics_subscription', 'security_compliance'],
+  MATERIAL_SUPPLIER: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'marketplace', 'inventory', 'rfq_management', 'opportunities', 'lead_management', 'analytics_subscription', 'security_compliance'],
+  CONSULTANT: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'lead_management', 'crm', 'analytics_subscription', 'security_compliance'],
+  BANK: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'lead_management', 'finance', 'crm', 'analytics_subscription', 'security_compliance'],
+  RECRUITER: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'hr_dms', 'lead_management', 'analytics_subscription', 'security_compliance'],
+  FACILITY_MANAGEMENT: ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'assets_maintenance', 'projects', 'analytics_subscription', 'security_compliance']
 };
 
 const DEFAULT_LOGGED_IN_MODULES: NavItem['id'][] = ['dashboard', 'directory', 'feed', 'network_dashboard', 'messaging', 'meetings', 'marketplace'];
@@ -175,7 +177,6 @@ interface LandingPortalProps {
   userSession: Session | null;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   onToggleDevHub: () => void;
-  onStartOnboarding: () => void;
   isLightMode?: boolean;
   onToggleTheme?: () => void;
   onLogout?: () => void;
@@ -186,6 +187,8 @@ interface LandingPortalProps {
   initialViewMode?: string;
   // The session's company details changed on the server (e.g. the company was renamed).
   onSessionStale?: () => void;
+  // Notifications raised by the server for this company (requests, messages, quotations).
+  serverNotifications?: { id: string; content: string; timestamp: string }[];
 }
 
 const SIGNUP_ROLE_LABELS: Record<string, string> = {
@@ -352,7 +355,6 @@ export default function LandingPortal({
   userSession, 
   showToast, 
   onToggleDevHub, 
-  onStartOnboarding,
   isLightMode = false,
   onToggleTheme,
   onLogout,
@@ -360,7 +362,8 @@ export default function LandingPortal({
   onRegister,
   authMeta,
   initialViewMode,
-  onSessionStale
+  onSessionStale,
+  serverNotifications = []
 }: LandingPortalProps) {
   // Companies registered on the platform. The bundled sample companies are added only in demo mode.
   const [registeredCompanies, setRegisteredCompanies] = useState<Company[]>([]);
@@ -371,6 +374,11 @@ export default function LandingPortal({
   }, [showToast]);
   React.useEffect(() => {
     reloadCompanies();
+    // Companies that register while this one is open show up without a reload.
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') reloadCompanies();
+    }, 30000);
+    return () => clearInterval(timer);
   }, [reloadCompanies]);
 
   const companyRegistry = React.useMemo(() => {
@@ -402,8 +410,6 @@ export default function LandingPortal({
     setSearchResults(companyRegistry);
   }, [companyRegistry]);
 
-  // Ecosystem Guide State
-  const [isGuideCollapsed, setIsGuideCollapsed] = useState(false);
 
   // Role Profiles for Quick Access Flow
   const QUICK_ROLES = [
@@ -636,11 +642,32 @@ export default function LandingPortal({
   const [authRole, setAuthRole] = useState('BUILDER');
   const [authOrgName, setAuthOrgName] = useState('');
   const [authName, setAuthName] = useState('');
+  // Set when the visitor arrived through an invitation link.
+  const [inviteCode, setInviteCode] = useState('');
   const [authCity, setAuthCity] = useState('');
   const [authRera, setAuthRera] = useState('');
   const [authDefaultView, setAuthDefaultView] = useState('dashboard');
   const [authError, setAuthError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
+
+  const openSignUp = () => {
+    setInviteCode('');
+    setAuthModalTab('signup');
+    setAuthError('');
+    setIsAuthModalOpen(true);
+  };
+
+  // An invitation link looks like /?invite=CODE&email=name@company.com
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('invite');
+    if (!code) return;
+    setInviteCode(code);
+    setAuthEmail(params.get('email') || '');
+    setAuthModalTab('signup');
+    setIsAuthModalOpen(true);
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
 
   const switchAuthTab = (tab: 'signin' | 'signup') => {
     setAuthModalTab(tab);
@@ -666,15 +693,17 @@ export default function LandingPortal({
         await onLogin?.(authEmail.trim(), authPassword, undefined, authDefaultView);
       } else {
         await onRegister?.(
-          {
-            email: authEmail.trim(),
-            password: authPassword,
-            organizationName: authOrgName.trim(),
-            name: authName.trim() || undefined,
-            city: authCity.trim() || undefined,
-            role: authRole,
-            reraRegistration: authRera.trim() || undefined
-          },
+          inviteCode
+            ? { email: authEmail.trim(), password: authPassword, inviteCode, name: authName.trim() || undefined }
+            : {
+                email: authEmail.trim(),
+                password: authPassword,
+                organizationName: authOrgName.trim(),
+                name: authName.trim() || undefined,
+                city: authCity.trim() || undefined,
+                role: authRole,
+                reraRegistration: authRera.trim() || undefined
+              },
           'dashboard'
         );
       }
@@ -689,7 +718,11 @@ export default function LandingPortal({
   const allowedModuleIds = React.useMemo(() => {
     if (!userSession) return new Set<NavItem['id']>();
     const modules = ROLE_NAV_ACCESS[userSession.role] || DEFAULT_LOGGED_IN_MODULES;
-    return new Set<NavItem['id']>(modules);
+    // Modules the company's plan does not include are hidden (platform administrators see everything).
+    const included = userSession.role === 'ADMIN'
+      ? modules
+      : modules.filter(id => !MODULE_FEATURE[id] || userSession.plan.features.includes(MODULE_FEATURE[id]));
+    return new Set<NavItem['id']>(included);
   }, [userSession]);
 
   const visibleNavigationGroups = React.useMemo(
@@ -789,6 +822,23 @@ export default function LandingPortal({
     }
   ]);
 
+  // A new notification usually means another company did something; refresh the company list too.
+  React.useEffect(() => {
+    if (serverNotifications.length > 0) reloadCompanies();
+  }, [serverNotifications.length]);
+
+  // New server notifications appear in the bell once; whether they were read is remembered with the rest.
+  React.useEffect(() => {
+    if (serverNotifications.length === 0) return;
+    setGlobalNotifications(prev => {
+      const known = new Set(prev.map(n => n.id));
+      const fresh = serverNotifications
+        .filter(n => !known.has(`srv-${n.id}`))
+        .map(n => ({ id: `srv-${n.id}`, title: 'New activity', description: n.content, category: 'Network', timestamp: n.timestamp, read: false }));
+      return fresh.length ? [...fresh, ...prev] : prev;
+    });
+  }, [serverNotifications]);
+
   // Keyboard Ctrl+K shortcut and Escape key listener
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -834,7 +884,15 @@ export default function LandingPortal({
     }));
 
     // 2. Filter Marketplace Listings (Products & Services)
-    const matchedProducts = INITIAL_MARKETPLACE_LISTINGS.filter(item =>
+    // Search what is actually saved; the bundled samples are only searchable on demo servers.
+    const fromStore = <T,>(key: string, sample: T[]): T[] => {
+      try {
+        const parsed = JSON.parse(appStore.getItem(key) || 'null');
+        if (Array.isArray(parsed)) return parsed;
+      } catch { /* fall through */ }
+      return authMeta?.demoMode ? sample : [];
+    };
+    const matchedProducts = fromStore('realtyconnect_marketplace_listings', INITIAL_MARKETPLACE_LISTINGS).filter(item =>
       item.name.toLowerCase().includes(query) ||
       item.shortDescription.toLowerCase().includes(query) ||
       item.detailedDescription.toLowerCase().includes(query) ||
@@ -853,7 +911,7 @@ export default function LandingPortal({
     }));
 
     // 3. Filter RFQs & Tenders
-    const matchedRfqs = INITIAL_RFQS.filter(item =>
+    const matchedRfqs = fromStore('realtyconnect_rfq_list', INITIAL_RFQS).filter(item =>
       item.title.toLowerCase().includes(query) ||
       item.description.toLowerCase().includes(query) ||
       item.requiredProductsServices.toLowerCase().includes(query) ||
@@ -870,7 +928,7 @@ export default function LandingPortal({
     }));
 
     // 4. Filter Opportunities
-    const matchedOpportunities = INITIAL_OPPORTUNITIES.filter(item =>
+    const matchedOpportunities = fromStore('rc_opportunities', INITIAL_OPPORTUNITIES).filter(item =>
       item.title.toLowerCase().includes(query) ||
       item.description.toLowerCase().includes(query) ||
       item.requiredProductsServices.toLowerCase().includes(query) ||
@@ -1287,27 +1345,29 @@ export default function LandingPortal({
   };
 
   const handleAcceptConnection = (id: string) => {
-    setConnections(prev => prev.map(c => {
-      if (c.id === id) {
-        handleLogTimeline('B2B_CONNECTION_HANDSHAKE_COMPLETED', 'connections', `Accepted incoming connection request from ${c.businessName}. Mutual access opened.`, 'SUCCESS');
-        onLogTriggered(
-          'B2B_CONNECTION_HANDSHAKE_COMPLETED',
-          'companies',
-          c.businessId,
-          'SUCCESS',
-          `Accepted connection request from ${c.businessName}. Secure handshakes verified.`
-        );
-        showToast(`B2B connection established with ${c.businessName}!`, 'success');
-        return { ...c, status: 'accepted' as const };
-      }
-      return c;
-    }));
+    const target = connections.find(c => c.id === id);
+    if (!target) return;
+    const finish = () => {
+      setConnections(prev => prev.map(c => (c.id === id ? { ...c, status: 'accepted' as const } : c)));
+      handleLogTimeline('B2B_CONNECTION_HANDSHAKE_COMPLETED', 'connections', `Accepted incoming connection request from ${target.businessName}. Mutual access opened.`, 'SUCCESS');
+      onLogTriggered('B2B_CONNECTION_HANDSHAKE_COMPLETED', 'companies', target.businessId, 'SUCCESS', `Accepted connection request from ${target.businessName}.`);
+      showToast(`B2B connection established with ${target.businessName}!`, 'success');
+    };
+    if (isRegisteredCompanyId(target.businessId)) {
+      // The other company is told, and sees the connection as accepted.
+      api('POST', `/network/connections/${encodeURIComponent(id)}/respond`, { accept: true }).then(finish).catch(err => showToast(errorMessage(err), 'error'));
+    } else {
+      finish();
+    }
   };
 
   const handleRejectConnection = (id: string) => {
     const target = connections.find(c => c.id === id);
     if (!target) return;
 
+    if (isRegisteredCompanyId(target.businessId)) {
+      api('POST', `/network/connections/${encodeURIComponent(id)}/respond`, { accept: false }).catch(err => showToast(errorMessage(err), 'error'));
+    }
     setConnections(prev => prev.filter(c => c.id !== id));
     handleLogTimeline('B2B_CONNECTION_REQUEST_REJECTED', 'connections', `Declined connection request from ${target.businessName}.`, 'WARNING');
     onLogTriggered('B2B_CONNECTION_REQUEST_REJECTED', 'companies', target.businessId, 'WARNING', `Rejected connection invitation from ${target.businessName}`);
@@ -1318,6 +1378,9 @@ export default function LandingPortal({
     const target = connections.find(c => c.id === id);
     if (!target) return;
 
+    if (isRegisteredCompanyId(target.businessId)) {
+      api('DELETE', `/network/connections/${encodeURIComponent(id)}`).catch(err => showToast(errorMessage(err), 'error'));
+    }
     setConnections(prev => prev.filter(c => c.id !== id));
     setConnectionsSent(prev => prev.filter(bid => bid !== target.businessId));
     handleLogTimeline('B2B_CONNECTION_REVOKED', 'connections', `Withdrew connection proposal/link with ${target.businessName}.`, 'WARNING');
@@ -1334,6 +1397,18 @@ export default function LandingPortal({
     }
     if (connections.some(c => c.businessId === businessId)) {
       showToast('A connection is already active or pending with this company.', 'error');
+      return;
+    }
+
+    if (isRegisteredCompanyId(businessId)) {
+      api<Connection>('POST', '/network/connections', { toOrgId: businessId, purpose })
+        .then(created => {
+          setConnections(prev => (prev.some(c => c.id === created.id) ? prev : [...prev, created]));
+          setConnectionsSent(prev => [...prev, businessId]);
+          handleLogTimeline('B2B_CONNECTION_REQUESTED', 'connections', `Sent a connection request to ${name}. Purpose: "${purpose}"`, 'INFO');
+          showToast(`Connection request sent to ${name}.`, 'success');
+        })
+        .catch(err => showToast(errorMessage(err), 'error'));
       return;
     }
 
@@ -1545,12 +1620,12 @@ export default function LandingPortal({
     }
   };
 
-  const handleSendEnquiry = (businessId: string, name: string, subject: string, category: string, message: string, email: string, phone: string) => {
+  const handleSendEnquiry = (businessId: string, name: string, subject: string, category: string, message: string, email: string, phone: string): Promise<boolean> => {
     if (!userSession) {
       showToast('Please sign in or select your business role to send secure business inquiries.', 'info');
       setAuthModalTab('signin');
       setIsAuthModalOpen(true);
-      return;
+      return Promise.resolve(false);
     }
     const newEnq: Enquiry = {
       id: `enq-${Date.now()}`,
@@ -1564,6 +1639,21 @@ export default function LandingPortal({
       timestamp: new Date().toLocaleString(),
       status: 'sent'
     };
+
+    if (isRegisteredCompanyId(businessId)) {
+      // A real company receives this as a new lead and a conversation; its reply arrives in Messaging.
+      return api<{ conversationId: string }>('POST', '/network/enquiries', { toOrgId: businessId, kind: 'profile', subject, category, message, email, phone })
+        .then(() => {
+          setEnquiries(prev => [newEnq, ...prev]);
+          handleLogTimeline('B2B_ENQUIRY_DISPATCHED', 'enquiries', `Sent enquiry "${subject}" to ${name}.`, 'INFO');
+          showToast(`Enquiry delivered to ${name}. Their reply will appear in Messaging.`, 'success');
+          return true;
+        })
+        .catch(err => {
+          showToast(errorMessage(err), 'error');
+          return false;
+        });
+    }
 
     setEnquiries(prev => [newEnq, ...prev]);
     handleLogTimeline('B2B_ENQUIRY_DISPATCHED', 'enquiries', `Sent secured B2B Inquiry regarding "${subject}" to ${name}.`, 'INFO');
@@ -1598,6 +1688,7 @@ export default function LandingPortal({
         return enq;
       }));
     }, 1500);
+    return Promise.resolve(true);
   };
 
   const handleScheduleMeeting = (businessId: string, name: string, title: string, date: string, time: string, type: string) => {
@@ -1633,6 +1724,33 @@ export default function LandingPortal({
       attachments: []
     };
 
+    const timeTo24h = (t: string) => {
+      const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec(t.trim());
+      if (!m) return '11:00';
+      let h = parseInt(m[1], 10);
+      if (m[3]?.toUpperCase() === 'PM' && h < 12) h += 12;
+      if (m[3]?.toUpperCase() === 'AM' && h === 12) h = 0;
+      return `${String(h).padStart(2, '0')}:${m[2]}`;
+    };
+    const registeredHost = isRegisteredCompanyId(businessId);
+    if (registeredHost) {
+      newCalendarMeet.startTime = timeTo24h(time || '11:00');
+      newCalendarMeet.endTime = `${String((parseInt(newCalendarMeet.startTime, 10) + 1) % 24).padStart(2, '0')}:${newCalendarMeet.startTime.slice(3)}`;
+      newCalendarMeet.participants = [currentUserName()];
+      api('POST', '/network/meetings', {
+        toOrgId: businessId,
+        meetingId: newCalendarMeet.id,
+        title: newCalendarMeet.title,
+        meetingType: newCalendarMeet.meetingType,
+        meetingDate: newCalendarMeet.meetingDate,
+        startTime: newCalendarMeet.startTime,
+        endTime: newCalendarMeet.endTime,
+        meetingMode: newCalendarMeet.meetingMode,
+        location: newCalendarMeet.location,
+        agenda: newCalendarMeet.agenda
+      }).catch(err => showToast(`The invitation could not be delivered: ${errorMessage(err)}`, 'error'));
+    }
+
     // Save to appStore list
     try {
       const saved = appStore.getItem('realtyconnect_meetings');
@@ -1661,7 +1779,7 @@ export default function LandingPortal({
     setPrefilledMeeting(newCalendarMeet);
     setActiveViewMode('meetings');
 
-    createLeadFromInteraction({
+    if (!registeredHost) createLeadFromInteraction({
       title: `Consultation Schedule: ${title}`,
       type: 'Meeting Request',
       source: 'Networking',
@@ -1695,6 +1813,23 @@ export default function LandingPortal({
       status: 'pending',
       timestamp: new Date().toLocaleString()
     };
+
+    if (isRegisteredCompanyId(businessId)) {
+      api('POST', '/network/enquiries', {
+        toOrgId: businessId,
+        kind: 'partnership',
+        subject: `${type === 'partnership' ? 'Partnership' : type === 'dealer' ? 'Dealership' : 'Distributorship'} proposal: ${scope}`.slice(0, 200),
+        category: 'Partnership',
+        message: `Scope: ${scope}\nEstimated value: ${value}\nTerms: ${terms}`
+      })
+        .then(() => {
+          setPartnerships(prev => [newPart, ...prev]);
+          handleLogTimeline('B2B_PARTNERSHIP_PROPOSAL_FILED', 'partnerships', `Sent a ${type} proposal to ${name}.`, 'SUCCESS');
+          showToast(`Proposal delivered to ${name}.`, 'success');
+        })
+        .catch(err => showToast(errorMessage(err), 'error'));
+      return;
+    }
 
     setPartnerships(prev => [newPart, ...prev]);
     handleLogTimeline('B2B_PARTNERSHIP_PROPOSAL_FILED', 'partnerships', `Filed regional ${type} franchise request with ${name} valued at ${value}.`, 'SUCCESS');
@@ -1837,6 +1972,9 @@ export default function LandingPortal({
   };
 
   const handleBlockCompany = (businessId: string, name: string, reason: string) => {
+    if (isRegisteredCompanyId(businessId)) {
+      api('POST', '/network/blocks', { orgId: businessId }).catch(err => showToast(errorMessage(err), 'error'));
+    }
     const newBlock: BlockedReported = {
       id: `block-${Date.now()}`,
       businessId,
@@ -1855,6 +1993,10 @@ export default function LandingPortal({
   };
 
   const handleReportCompany = (businessId: string, name: string, reason: string, details: string) => {
+    if (isRegisteredCompanyId(businessId)) {
+      // Reports of real companies reach platform reviewers.
+      api('POST', '/network/reports', { orgId: businessId, reason, details }).catch(err => showToast(errorMessage(err), 'error'));
+    }
     const newReport: BlockedReported = {
       id: `report-${Date.now()}`,
       businessId,
@@ -1874,6 +2016,9 @@ export default function LandingPortal({
   const handleUnblockCompany = (businessId: string) => {
     const target = blockedReported.find(b => b.businessId === businessId);
     if (!target) return;
+    if (isRegisteredCompanyId(businessId)) {
+      api('DELETE', `/network/blocks/${encodeURIComponent(businessId)}`).catch(err => showToast(errorMessage(err), 'error'));
+    }
 
     setBlockedReported(prev => prev.filter(b => b.businessId !== businessId));
     handleLogTimeline('B2B_COMPANY_UNBLOCKED', 'preferences', `Unblocked company ${target.businessName}.`, 'SUCCESS');
@@ -1883,7 +2028,7 @@ export default function LandingPortal({
 
   // Connect request workflow
   const handleConnectRequest = (businessId: string, businessName: string) => {
-    const target = DISCOVERY_REGISTRY.find(b => b.id === businessId);
+    const target = companyRegistry.find(b => b.id === businessId);
     if (!target) return;
     handleSendConnection(businessId, businessName, target.category, target.location, target.logoBg, 'Standard Mutual Handshake via B2B Directory Card');
   };
@@ -2437,9 +2582,7 @@ export default function LandingPortal({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  onStartOnboarding();
-                }}
+                onClick={openSignUp}
                 className="hidden sm:block px-3 py-1.5 rounded-lg text-xs font-bold font-mono uppercase bg-emerald-500 hover:bg-emerald-600 text-slate-950 transition-all cursor-pointer shadow-md shadow-emerald-500/10"
               >
                 Sign Up
@@ -3113,13 +3256,14 @@ export default function LandingPortal({
       {activeViewMode === 'home' && (
         <MarketplaceHome
           userSession={userSession}
+          demoMode={!!authMeta?.demoMode}
           onLogTriggered={onLogTriggered}
           showToast={showToast}
           onTriggerLogin={() => {
             setAuthModalTab('signin');
             setIsAuthModalOpen(true);
           }}
-          onTriggerOnboarding={onStartOnboarding}
+          onTriggerOnboarding={openSignUp}
           onSelectBusiness={(comp) => setSelectedBusiness(comp)}
           setActiveViewMode={setActiveViewMode}
           onSearchGlobal={(term, cat, loc) => {
@@ -3132,308 +3276,6 @@ export default function LandingPortal({
         />
       )}
 
-      {/* Dynamic Quick-Start & Interactive System Flow Guide */}
-      {!userSession && authMeta?.demoMode && (
-      <section className="px-4 md:px-6 py-8 bg-slate-900/50 border-b border-slate-850">
-        <div className="max-w-7xl mx-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 md:p-6 shadow-2xl relative overflow-hidden">
-            
-            {/* Subtle background glow */}
-            <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4 mb-6">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <Sparkles className="w-5 h-5 animate-pulse" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2 font-display">
-                    Ecosystem Interactive Flow Guide
-                    <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-1.5 py-0.5 rounded font-mono font-bold tracking-wider">
-                      Quick Start
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
-                    This is an advanced B2B multi-role enterprise platform. Read this simple 3-step interactive flow to see how stakeholder operations, project modules, and unalterable audit trails work.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsGuideCollapsed(!isGuideCollapsed)}
-                className="self-start sm:self-center bg-slate-950 hover:bg-slate-850 border border-slate-800 px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                {isGuideCollapsed ? (
-                  <>
-                    <span>Show Walkthrough Guide</span>
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  </>
-                ) : (
-                  <>
-                    <span>Hide Walkthrough Guide</span>
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Content area: Animated Stepper/Guides */}
-            {!isGuideCollapsed && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* Step 1: Active Role Identity */}
-                <div className="p-5 rounded-xl bg-slate-950/40 border border-slate-850 relative space-y-4 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono font-extrabold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 uppercase tracking-widest">
-                        Step 1
-                      </span>
-                      {userSession ? (
-                        <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          Role Active
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded font-semibold animate-pulse">
-                          Awaiting Login Mode
-                        </span>
-                      )}
-                    </div>
-                    
-                    <h4 className="text-sm font-bold text-white mt-3 font-display">
-                      Choose Your Business Role
-                    </h4>
-                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                      Click any role below to instantly authenticate and log in as that persona. The entire platform will customize itself automatically:
-                    </p>
-                  </div>
-
-                  {/* Quick-Select Buttons */}
-                  <div className="space-y-2.5 pt-2">
-                    {QUICK_ROLES.map((roleObj, rIdx) => {
-                      const IconObj = roleObj.icon;
-                      const isSelected = userSession?.role === roleObj.role;
-                      return (
-                        <button
-                          key={rIdx}
-                          type="button"
-                          onClick={() => handleQuickLogin(roleObj.email, roleObj.role, roleObj.defaultView)}
-                          className={`w-full text-left p-3 rounded-xl border text-xs transition-all flex items-start gap-3 relative cursor-pointer ${
-                            isSelected 
-                              ? 'border-emerald-500 bg-emerald-500/10 text-white shadow-md' 
-                              : roleObj.color
-                          }`}
-                        >
-                          <div className={`p-1.5 rounded-lg ${isSelected ? 'bg-emerald-500 text-slate-950' : 'bg-slate-900 border border-slate-800'}`}>
-                            <IconObj className="w-4 h-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="font-bold text-slate-100 truncate">{roleObj.title}</span>
-                              {isSelected && (
-                                <span className="text-[8px] bg-emerald-500 text-slate-950 font-bold px-1.5 py-0.5 rounded font-mono leading-none">
-                                  Active
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-slate-400 leading-tight mt-0.5">{roleObj.desc}</p>
-                            <span className={`inline-block text-[8px] font-mono border rounded px-1.5 py-0.5 mt-1.5 leading-none ${roleObj.badgeColor}`}>
-                              {roleObj.badge}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {userSession && (
-                    <div className="pt-2">
-                      <button
-                        onClick={onLogout}
-                        className="w-full text-center bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 text-red-400 hover:text-red-300 py-1.5 px-3 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer"
-                      >
-                        Reset / Sign Out Corporate Session
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Step 2: Adaptive Modules */}
-                <div className="p-5 rounded-xl bg-slate-950/40 border border-slate-850 space-y-4 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono font-extrabold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20 uppercase tracking-widest">
-                        Step 2
-                      </span>
-                      {userSession ? (
-                        <span className="text-[9px] font-mono text-blue-400 bg-blue-500/10 border border-blue-500/25 px-2 py-0.5 rounded font-semibold">
-                          Engines Activated
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-mono text-slate-500 bg-slate-900 px-2 py-0.5 rounded">
-                          Awaiting Step 1
-                        </span>
-                      )}
-                    </div>
-                    
-                    <h4 className="text-sm font-bold text-white mt-3 font-display">
-                      Access Role-Tailored Core Modules
-                    </h4>
-                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                      Once you pick a role, the left sidebar dynamically changes, and we unlock advanced real estate workflows tailored for you. 
-                      Try accessing these custom-designed dashboards:
-                    </p>
-                  </div>
-
-                  {/* Interactive Status block */}
-                  <div className="flex-1 flex flex-col justify-center py-4">
-                    {userSession ? (
-                      <div className="bg-slate-950/80 border border-slate-850 rounded-xl p-3.5 space-y-3">
-                        <div className="text-[10px] font-mono text-slate-500 uppercase font-semibold">
-                          Active System Modules for {userSession.role}:
-                        </div>
-                        <div className="grid grid-cols-1 gap-2">
-                          {userSession.role === 'BUILDER' && (
-                            <>
-                              <div className="flex items-center gap-2 text-xs text-slate-300">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                <span><strong>Control Center</strong>: General overview of project metrics.</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-slate-300">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                <span><strong>RFQ & Tenders</strong>: Launch materials tenders, receive supplier quotes.</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-slate-300">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                <span><strong>Procurement Engine</strong>: Trigger bulk buying cycles.</span>
-                              </div>
-                            </>
-                          )}
-                          {userSession.role === 'CONTRACTOR' && (
-                            <>
-                              <div className="flex items-center gap-2 text-xs text-slate-300">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                                <span><strong>Project Portfolio</strong>: Direct site operational boards & schedules.</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-slate-300">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                                <span><strong>B2B Messaging</strong>: Real-time chat with developers and suppliers.</span>
-                              </div>
-                            </>
-                          )}
-                          {userSession.role === 'MATERIAL_SUPPLIER' && (
-                            <>
-                              <div className="flex items-center gap-2 text-xs text-slate-300">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                <span><strong>Inventory Engine</strong>: List steel tons, cement supplies, machinery leases.</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-slate-300">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                <span><strong>B2B Marketplace</strong>: List active machinery rentals & materials stock.</span>
-                              </div>
-                            </>
-                          )}
-                          {userSession.role === 'ADMIN' && (
-                            <>
-                              <div className="flex items-center gap-2 text-xs text-slate-300">
-                                <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                                <span><strong>B2B Directory</strong>: Filter, approve, and verify business registers.</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-slate-300">
-                                <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                                <span><strong>Dev Hub Compliance</strong>: Open the compliance audits console to check logs.</span>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                        <div className="pt-2 text-center">
-                          <span className="text-[10px] font-mono text-emerald-400 animate-pulse">
-                            ← Try navigating the Left Sidebar modules below!
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-6 bg-slate-900/40 rounded-xl border border-dashed border-slate-800 text-slate-500">
-                        <Lock className="w-8 h-8 mx-auto text-slate-600 mb-2" />
-                        <span className="text-xs">Log in with your role in Step 1 to activate and explore modules.</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="text-[10px] text-slate-500 font-mono text-center">
-                    All operations run with active session context.
-                  </div>
-                </div>
-
-                {/* Step 3: Governance Ledger */}
-                <div className="p-5 rounded-xl bg-slate-950/40 border border-slate-850 space-y-4 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono font-extrabold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20 uppercase tracking-widest">
-                        Step 3
-                      </span>
-                      <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
-                        <ShieldCheck className="w-3 h-3" />
-                        RERA Compliant
-                      </span>
-                    </div>
-                    
-                    <h4 className="text-sm font-bold text-white mt-3 font-display">
-                      Trace the Immutable Security Audit Trail
-                    </h4>
-                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                      Every action—like switching roles, creating projects, or uploading blueprints—generates a cryptographically chained audit log conforming to LOG-01 regulations:
-                    </p>
-                  </div>
-
-                  {/* Immutable audit chain style */}
-                  <div className="bg-slate-950/80 border border-slate-850 rounded-xl p-3.5 space-y-2 font-mono text-[9.5px]">
-                    <div className="text-slate-500 border-b border-slate-900 pb-1 flex items-center justify-between">
-                      <span>SECURE LOG CHAIN</span>
-                      <span className="text-[8px] bg-indigo-500/10 text-indigo-400 px-1 rounded">Active</span>
-                    </div>
-                    <div className="space-y-1 text-slate-300">
-                      <div className="flex items-center gap-1">
-                        <span className="text-emerald-400">●</span>
-                        <span className="text-slate-500">Hash:</span>
-                        <span className="text-slate-400 truncate">SHA256_realtyconnect_L-10001</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-emerald-400">●</span>
-                        <span className="text-slate-500">Signatures:</span>
-                        <span className="text-slate-400">COMPLIANCE_APPROVED</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-emerald-400">●</span>
-                        <span className="text-slate-500">Immutability:</span>
-                        <span className="text-slate-400 font-bold text-emerald-400">ENFORCED (Read-Only)</span>
-                      </div>
-                    </div>
-                    <div className="pt-2 border-t border-slate-900 text-center">
-                      <button
-                        type="button"
-                        onClick={onToggleDevHub}
-                        className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 py-1 px-3 rounded-lg transition-all cursor-pointer font-bold"
-                      >
-                        Open IAM/Compliance Log Console →
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="text-[10.5px] text-slate-400 leading-relaxed">
-                    🌟 <strong>Quick Tip:</strong> Select <strong>"Builder / Developer"</strong> in Step 1 to open the Control Center dashboard and initiate the RFQ tender flow.
-                  </div>
-                </div>
-
-              </div>
-            )}
-
-          </div>
-        </div>
-      </section>
-      )}
 
       {/* Phase 2: Live Business Discovery Directory Results Grid & B2B Networking Engine */}
       {activeViewMode !== 'home' && (
@@ -3824,7 +3666,7 @@ export default function LandingPortal({
                             type="button"
                             onClick={() => {
                               setIsMobileDrawerOpen(false);
-                              onStartOnboarding();
+                              openSignUp();
                             }}
                             className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs font-mono flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-500/10"
                           >
@@ -4255,599 +4097,6 @@ export default function LandingPortal({
       </section>
       )}
 
-      {/* Stakeholder Onboarding / Business Value Sections */}
-      {activeViewMode !== 'home' && (
-        <>
-          <section id="stakeholder-entry" className="px-6 py-16 bg-slate-900/40 border-b border-slate-850">
-        <div className="max-w-5xl mx-auto space-y-10">
-          <div className="text-center space-y-2">
-            <h3 className="text-2xl font-extrabold text-white">A Tailored Gate For Every Stakeholder</h3>
-            <p className="text-sm text-slate-400 max-w-2xl mx-auto">
-              Real estate operates in high stakes. Discover exactly how RealtyConnect brings massive value to your specific enterprise class.
-            </p>
-          </div>
-
-          <div className="flex justify-center flex-wrap gap-1.5 p-1 bg-slate-950 border border-slate-800 rounded-xl max-w-3xl mx-auto">
-            {[
-              { id: 'builders', label: 'Builders & Developers' },
-              { id: 'vendors', label: 'Vendors & Suppliers' },
-              { id: 'contractors', label: 'Contractors & Consultants' },
-              { id: 'banks', label: 'Banks & NBFCs' },
-              { id: 'jobs', label: 'Career Seekers' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setActiveStakeholderTab(tab.id);
-                  onLogTriggered(
-                    'STAKEHOLDER_ENTRY_TAB_CHANGED',
-                    'navigation',
-                    tab.id,
-                    'SUCCESS',
-                    `Navigation: Swapped landing view category value to target stakeholder segment: ${tab.label}.`
-                  );
-                }}
-                className={`px-4 py-2 rounded-lg text-xs font-semibold tracking-tight transition-all ${
-                  activeStakeholderTab === tab.id 
-                    ? 'bg-emerald-500 text-slate-950 font-bold shadow-md' 
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="bg-slate-950 border border-slate-850 p-6 md:p-8 rounded-2xl">
-            {activeStakeholderTab === 'builders' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                <div className="space-y-4">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                    <Building2 className="w-5 h-5" />
-                  </div>
-                  <h4 className="text-lg font-bold text-white">Scale Operations, Secure Trusted Bidders</h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Builders and Developers enjoy a streamlined ecosystem where project risk is reduced. Avoid unreliable contractors and untrustworthy vendors.
-                  </p>
-                  <ul className="space-y-2 text-xs text-slate-300">
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Verify sub-contractor capacity before awarding tenders</li>
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Direct escrow pipeline integration with national banks</li>
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Auto-publish project blueprints for material bids</li>
-                  </ul>
-                </div>
-                <div className="bg-slate-900/50 p-5 rounded-xl border border-slate-800 space-y-3">
-                  <span className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-bold block">Developer Portal Preview</span>
-                  <p className="text-xs text-slate-400">Launch project, procure materials directly and maintain transparent RERA logs automatically with our background foundation.</p>
-                  <button 
-                    onClick={onStartOnboarding}
-                    className="w-full bg-emerald-500 hover:bg-emerald-600 border border-transparent py-2.5 rounded-lg text-xs font-bold font-mono tracking-tight text-slate-950 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <span>Launch Developer Onboarding</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {activeStakeholderTab === 'vendors' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                <div className="space-y-4">
-                  <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center">
-                    <Database className="w-5 h-5" />
-                  </div>
-                  <h4 className="text-lg font-bold text-white">Unlock High-Volume Material Leads</h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Raw material suppliers, cement manufacturers, aggregate dealers, and hardware vendors gain direct pipeline access to top-tier active residential and commercial builders.
-                  </p>
-                  <ul className="space-y-2 text-xs text-slate-300">
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Automated RFQ delivery directly matching your SKU catalog</li>
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Fast secure payment escrows backed by partnering financial institutions</li>
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Publish material inventories with real-time dispatch tracking</li>
-                  </ul>
-                </div>
-                <div className="bg-slate-900/50 p-5 rounded-xl border border-slate-800 space-y-3">
-                  <span className="text-[10px] font-mono text-teal-400 uppercase tracking-widest font-bold block">Material Vendor Preview</span>
-                  <p className="text-xs text-slate-400">Configure catalog products and receive immediate bidding alerts. Let the background notification system route orders seamlessly.</p>
-                  <button 
-                    onClick={onStartOnboarding}
-                    className="w-full bg-emerald-500 hover:bg-emerald-600 border border-transparent py-2.5 rounded-lg text-xs font-bold font-mono tracking-tight text-slate-950 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <span>Launch Vendor Onboarding</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {activeStakeholderTab === 'contractors' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                <div className="space-y-4">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
-                    <Award className="w-5 h-5" />
-                  </div>
-                  <h4 className="text-lg font-bold text-white">Bid on Prestigious Tenders</h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Civil engineers, excavation teams, HVAC consultants, structural architects, and MEP contractors can showcase their verified portfolio directly to prominent project developers.
-                  </p>
-                  <ul className="space-y-2 text-xs text-slate-300">
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Access verified project specs, structural blueprints & timelines</li>
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Secure peer recommendations to boost search exposure</li>
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Eliminate middleman brokers and pitch direct to directors</li>
-                  </ul>
-                </div>
-                <div className="bg-slate-900/50 p-5 rounded-xl border border-slate-800 space-y-3">
-                  <span className="text-[10px] font-mono text-amber-400 uppercase tracking-widest font-bold block">Contractor bidding Preview</span>
-                  <p className="text-xs text-slate-400">Manage heavy equipment rentals, bid on structure works, and upload credentials through quarantine verification.</p>
-                  <button 
-                    onClick={onStartOnboarding}
-                    className="w-full bg-emerald-500 hover:bg-emerald-600 border border-transparent py-2.5 rounded-lg text-xs font-bold font-mono tracking-tight text-slate-950 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <span>Launch Contractor Onboarding</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {activeStakeholderTab === 'banks' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                <div className="space-y-4">
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
-                    <Briefcase className="w-5 h-5" />
-                  </div>
-                  <h4 className="text-lg font-bold text-white">Direct-to-Developer Commercial Finance</h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Partnering Banks, NBFCs, and financial institutes can directly integrate with active project developers, coordinate mortgage disbursement campaigns, and leverage our verified DSA networks.
-                  </p>
-                  <ul className="space-y-2 text-xs text-slate-300">
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Access verified builder compliance records and financial audits</li>
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Secure digital escrow pipelines with blockchain hashes</li>
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Expand mortgage sales volume via automated retail campaigns</li>
-                  </ul>
-                </div>
-                <div className="bg-slate-900/50 p-5 rounded-xl border border-slate-800 space-y-3">
-                  <span className="text-[10px] font-mono text-blue-400 uppercase tracking-widest font-bold block">Bank Escrow Preview</span>
-                  <p className="text-xs text-slate-400">Validate real-time cashflow thresholds, audit project development stages, and route disbursals under tight governance.</p>
-                  <button 
-                    onClick={onStartOnboarding}
-                    className="w-full bg-emerald-500 hover:bg-emerald-600 border border-transparent py-2.5 rounded-lg text-xs font-bold font-mono tracking-tight text-slate-950 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <span>Launch Banker Onboarding</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {activeStakeholderTab === 'jobs' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                <div className="space-y-4">
-                  <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center">
-                    <Users className="w-5 h-5" />
-                  </div>
-                  <h4 className="text-lg font-bold text-white">Accelerate Your Real Estate Career</h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Connect directly with verified corporate builders and infrastructure contractors. Apply for engineering, project management, compliance, and design roles.
-                  </p>
-                  <ul className="space-y-2 text-xs text-slate-300">
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Apply to verified organizations with zero ghost jobs</li>
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Build a professional audited career profile for recruiters</li>
-                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Standardized skill verification and secure PDF resume uploader</li>
-                  </ul>
-                </div>
-                <div className="bg-slate-900/50 p-5 rounded-xl border border-slate-800 space-y-3">
-                  <span className="text-[10px] font-mono text-purple-400 uppercase tracking-widest font-bold block">Career Gateway Preview</span>
-                  <p className="text-xs text-slate-400">Upload your certified credentials through our background quarantine file scan to register with recruiters immediately.</p>
-                  <button 
-                    onClick={onStartOnboarding}
-                    className="w-full bg-emerald-500 hover:bg-emerald-600 border border-transparent py-2.5 rounded-lg text-xs font-bold font-mono tracking-tight text-slate-950 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <span>Launch Career Onboarding</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* Global Business Categories Grid */}
-      <section id="categories" className="px-6 py-12 bg-slate-950 border-b border-slate-850">
-        <div className="max-w-5xl mx-auto space-y-8">
-          <div className="text-center space-y-2">
-            <h3 className="text-xl font-extrabold text-white">Unified Real Estate Categories</h3>
-            <p className="text-xs text-slate-400 max-w-xl mx-auto">
-              Our business taxonomies are standardized globally to ensure frictionless connection matching.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5">
-            {[
-              { code: 'BLD', name: 'Builders', count: '410+' },
-              { code: 'DEV', name: 'Developers', count: '180+' },
-              { code: 'VND', name: 'Material Vendors', count: '1,200+' },
-              { code: 'CON', name: 'Contractors', count: '650+' },
-              { code: 'CNS', name: 'Consultants', count: '320+' },
-              { code: 'BNK', name: 'Banks', count: '45+' },
-              { code: 'DSA', name: 'Finance DSAs', count: '140+' },
-              { code: 'EQP', name: 'Heavy Machinery', count: '290+' },
-              { code: 'MAT', name: 'Walling & Steel', count: '820+' },
-              { code: 'JOB', name: 'Careers & Talent', count: '1,500+' },
-              { code: 'SVS', name: 'Support Agencies', count: '210+' },
-              { code: 'REC', name: 'Recruiting Agencies', count: '60+' }
-            ].map(cat => (
-              <div 
-                key={cat.code}
-                onClick={() => {
-                  setSelectedCategory(cat.name.includes('Material') ? 'Vendors' : cat.name.includes('Walling') ? 'Materials' : cat.name.includes('Heavy') ? 'Equipment' : cat.name);
-                  onLogTriggered('CATEGORY_QUICK_FILTER_CLICKED', 'directory', cat.code, 'SUCCESS', `Directory: Visitor clicked taxonomy quick category "${cat.name}". Filter primed.`);
-                  showToast(`Registry filtered to ${cat.name}.`, 'info');
-                }}
-                className="bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 p-4 rounded-xl text-center space-y-1 cursor-pointer transition-all hover:scale-102"
-              >
-                <div className="text-[10px] font-mono font-bold text-emerald-400">{cat.code}</div>
-                <div className="font-bold text-xs text-slate-200 truncate">{cat.name}</div>
-                <div className="text-[10px] text-slate-500">{cat.count} listings</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Corporate Membership Plans */}
-      <section id="membership" className="px-6 py-16 bg-slate-900/20 border-b border-slate-850">
-        <div className="max-w-5xl mx-auto space-y-10">
-          <div className="text-center space-y-2">
-            <h3 className="text-2xl font-extrabold text-white">Enterprise Membership Plans</h3>
-            <p className="text-sm text-slate-400 max-w-xl mx-auto">
-              Choose the correct professional access model to accelerate your real estate business growth.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            {/* Plan 1 */}
-            <div className="bg-slate-950 border border-slate-850 p-6 rounded-2xl flex flex-col justify-between gap-6 hover:border-slate-800 transition-colors">
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono font-bold bg-slate-900 text-slate-400 px-2 py-0.5 rounded border border-slate-850">Basic Directory</span>
-                  <h4 className="text-lg font-bold text-white">Starter Free</h4>
-                  <p className="text-[11px] text-slate-400">Perfect for individual sub-contractors, brokers, or local building consultants starting out.</p>
-                </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-extrabold text-white">₹0</span>
-                  <span className="text-xs text-slate-500">/ Month</span>
-                </div>
-                <ul className="space-y-2 text-xs text-slate-300 border-t border-slate-850 pt-4">
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> Basic Business Listing</li>
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> Single Active Search Category</li>
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> View Public Project Posts</li>
-                  <li className="flex items-center gap-2 text-slate-500 line-through"><Check className="w-3.5 h-3.5 text-slate-600" /> Verified Trust Badge</li>
-                  <li className="flex items-center gap-2 text-slate-500 line-through"><Check className="w-3.5 h-3.5 text-slate-600" /> Direct Bank Liaison</li>
-                </ul>
-              </div>
-              <button 
-                type="button"
-                onClick={() => showToast('Paid plans are not open yet. You can start with the free plan today.', 'info')}
-                className="w-full bg-slate-900 hover:bg-slate-850 border border-slate-800 text-white font-bold text-xs py-2 rounded-xl transition-all"
-              >
-                Activate Starter
-              </button>
-            </div>
-
-            {/* Plan 2 */}
-            <div className="bg-slate-950 border-2 border-emerald-500/40 p-6 rounded-2xl flex flex-col justify-between gap-6 relative shadow-lg">
-              <div className="absolute top-3 right-3 bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 text-[9px] font-bold font-mono px-2 py-0.5 rounded-full uppercase tracking-wider">
-                Recommended
-              </div>
-              
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">B2B Growth Engine</span>
-                  <h4 className="text-lg font-bold text-white">Commercial Pro</h4>
-                  <p className="text-[11px] text-slate-400">Designed for established raw material suppliers, large contractor teams, and busy brokers.</p>
-                </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-extrabold text-white">₹4,999</span>
-                  <span className="text-xs text-slate-500">/ Month</span>
-                </div>
-                <ul className="space-y-2 text-xs text-slate-300 border-t border-slate-850 pt-4">
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> Premium Ranking in Search</li>
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> Verified B2B Badge on Profile</li>
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> 15 Active RFQ Bids Monthly</li>
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> Unlimited Project Posting</li>
-                  <li className="flex items-center gap-2 text-slate-500 line-through"><Check className="w-3.5 h-3.5 text-slate-600" /> Dedicated Relationship Exec</li>
-                </ul>
-              </div>
-              <button 
-                type="button"
-                onClick={() => showToast('Paid plans are not open yet. You can start with the free plan today.', 'info')}
-                className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs py-2 rounded-xl transition-all shadow-md shadow-emerald-500/20"
-              >
-                Go Commercial Pro
-              </button>
-            </div>
-
-            {/* Plan 3 */}
-            <div className="bg-slate-950 border border-slate-850 p-6 rounded-2xl flex flex-col justify-between gap-6 hover:border-slate-800 transition-colors">
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono font-bold bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded border border-indigo-500/20">Enterprise Grade</span>
-                  <h4 className="text-lg font-bold text-white">Corporate Elite</h4>
-                  <p className="text-[11px] text-slate-400">Engineered for major developers, multi-national construction firms, and institutional banks.</p>
-                </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-extrabold text-white">₹14,999</span>
-                  <span className="text-xs text-slate-500">/ Month</span>
-                </div>
-                <ul className="space-y-2 text-xs text-slate-300 border-t border-slate-850 pt-4">
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> 100% Unlimited Catalog & Bids</li>
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> Direct Bank escrow integrations</li>
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> Dev/QA access keys for backend APIs</li>
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> Dedicated RealtyConnect Auditor</li>
-                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-500" /> 24/7 Telephone SLA Support</li>
-                </ul>
-              </div>
-              <button 
-                type="button"
-                onClick={() => showToast('Paid plans are not open yet. You can start with the free plan today.', 'info')}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2 rounded-xl transition-all"
-              >
-                Apply Corporate Elite
-              </button>
-            </div>
-
-          </div>
-        </div>
-      </section>
-
-      {/* B2B Statistics & Trust Meter */}
-      <section className="px-6 py-12 bg-slate-950 text-slate-200 border-b border-slate-850">
-        <div className="max-w-5xl mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-            <div className="space-y-1.5 p-4 bg-slate-900/30 rounded-xl border border-slate-900">
-              <span className="text-2xl sm:text-3xl font-extrabold text-white">₹14,200 Cr+</span>
-              <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Project Volume Registered</p>
-            </div>
-            <div className="space-y-1.5 p-4 bg-slate-900/30 rounded-xl border border-slate-900">
-              <span className="text-2xl sm:text-3xl font-extrabold text-emerald-400">24,500+</span>
-              <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Verified Companies</p>
-            </div>
-            <div className="space-y-1.5 p-4 bg-slate-900/30 rounded-xl border border-slate-900">
-              <span className="text-2xl sm:text-3xl font-extrabold text-white">85+ Cities</span>
-              <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Geographical Footprint</p>
-            </div>
-            <div className="space-y-1.5 p-4 bg-slate-900/30 rounded-xl border border-slate-900">
-              <span className="text-2xl sm:text-3xl font-extrabold text-teal-400">150+</span>
-              <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Banking & NBFC Partners</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Success Stories & Endorsements */}
-      <section id="testimonials" className="px-6 py-16 bg-slate-900/40 border-b border-slate-850">
-        <div className="max-w-5xl mx-auto space-y-10">
-          <div className="text-center space-y-2">
-            <h3 className="text-2xl font-extrabold text-white">B2B Network Endorsements</h3>
-            <p className="text-sm text-slate-400 max-w-xl mx-auto">
-              Read how RealtyConnect is establishing unalterable, direct transaction pipelines for active builders.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            <div className="bg-slate-950 p-6 rounded-2xl border border-slate-850 space-y-4">
-              <p className="text-xs text-slate-300 italic leading-relaxed">
-                "Our previous construction procurement system relied on unverified Whatsapp groups and paper quotations, which resulted in regular material shortages and inflated pricing. Utilizing RealtyConnect, we dispatched ready-mix cement requests directly to verified local factories in NCR. We locked a 15% discount on bulk delivery and secured complete billing audits instantly."
-              </p>
-              <div className="flex items-center gap-3 border-t border-slate-850 pt-4">
-                <div className="w-9 h-9 rounded-full bg-emerald-500/10 text-emerald-400 font-extrabold text-xs flex items-center justify-center">
-                  RA
-                </div>
-                <div>
-                  <h5 className="font-bold text-xs text-slate-200">Rajesh Aggarwal</h5>
-                  <p className="text-[10px] font-mono text-slate-500">VP Procurement, Apex Developers Ltd</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-950 p-6 rounded-2xl border border-slate-850 space-y-4">
-              <p className="text-xs text-slate-300 italic leading-relaxed">
-                "As a heavy equipment lease provider, finding direct project managers was a constant bottleneck. Brokers took up to 8% margin. RealtyConnect verified our company within 24 hours of onboarding. Within one week, BuildCorp contracted three of our heavy tower cranes for their Bangalore metro extension. The transaction has been absolute perfection."
-              </p>
-              <div className="flex items-center gap-3 border-t border-slate-850 pt-4">
-                <div className="w-9 h-9 rounded-full bg-teal-500/10 text-teal-400 font-extrabold text-xs flex items-center justify-center">
-                  SM
-                </div>
-                <div>
-                  <h5 className="font-bold text-xs text-slate-200">Sanjay Mudaliar</h5>
-                  <p className="text-[10px] font-mono text-slate-500">Director, Global Tech Equipment Ltd</p>
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </section>
-
-      {/* Industry Updates Section */}
-      <section id="news" className="px-6 py-12 bg-slate-950 border-b border-slate-850">
-        <div className="max-w-5xl mx-auto space-y-8">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-extrabold text-white flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-emerald-400" />
-              Industry Updates & Compliance Pulse
-            </h3>
-            <span className="text-[10px] font-mono text-slate-500">Updated Hourly</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-3">
-              <span className="text-[9px] font-mono font-bold text-indigo-400 uppercase tracking-wider block">Legal & Compliance</span>
-              <h4 className="font-bold text-xs text-slate-200 hover:text-emerald-400 transition-colors cursor-pointer">
-                RERA compliance standards tightened for Q3 infrastructure filings
-              </h4>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                New transparency mandates require developers to publish structural blueprint hashes before initiating escrow releases.
-              </p>
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                <span>By RealtyConnect Legal</span>
-                <span>3 hours ago</span>
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-3">
-              <span className="text-[9px] font-mono font-bold text-teal-400 uppercase tracking-wider block">Market Trends</span>
-              <h4 className="font-bold text-xs text-slate-200 hover:text-emerald-400 transition-colors cursor-pointer">
-                High-grade steel procurement prices stabilize amid import adjustments
-              </h4>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Bulk commodity metrics display a minor drop in iron prices, presenting an optimal procurement window for foundation works.
-              </p>
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                <span>By Material Index</span>
-                <span>Yesterday</span>
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-3">
-              <span className="text-[9px] font-mono font-bold text-amber-400 uppercase tracking-wider block">Financing Pulse</span>
-              <h4 className="font-bold text-xs text-slate-200 hover:text-emerald-400 transition-colors cursor-pointer">
-                National banks introduce special escrow models for eco-certified builds
-              </h4>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Escrows with eco-credits gain up to 40 basis points concession on institutional project funding limits.
-              </p>
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                <span>By Banking Hub</span>
-                <span>2 days ago</span>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </section>
-
-      {/* Enterprise Contact & Inquiry Form */}
-      <section id="contact" className="px-6 py-16 bg-slate-900/10">
-        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-10">
-          
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-widest block">Inquire Today</span>
-              <h3 className="text-xl font-extrabold text-white">Join the RealtyConnect Enterprise Grid</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Ready to take your real estate business to the next tier? Our regional managers provide customized onboarding programs to verify your corporate identity and sync your catalogs.
-              </p>
-            </div>
-
-            <div className="space-y-4 text-xs text-slate-300 font-mono">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-400">
-                  <Mail className="w-4 h-4" />
-                </div>
-                <span>enterprise@realtyconnect.com</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-400">
-                  <Phone className="w-4 h-4" />
-                </div>
-                <span>+91 22 6124 9900 (Corporate desk)</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-400">
-                  <MapPin className="w-4 h-4" />
-                </div>
-                <span>Corporate Tower A, Worli, Mumbai 400018</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-slate-950 p-6 rounded-2xl border border-slate-850">
-            {contactSubmitted ? (
-              <div className="h-full flex flex-col items-center justify-center text-center space-y-3 py-6">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
-                  <Check className="w-6 h-6 stroke-[3]" />
-                </div>
-                <h4 className="font-bold text-sm text-white">Commercial Request Lodged</h4>
-                <p className="text-xs text-slate-400 max-w-xs">
-                  Your enterprise details have been successfully written to the secure background CRM database. An executive will dial your number shortly.
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleContactSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Company Representative Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Director / Head of Sourcing"
-                    value={contactName}
-                    onChange={(e) => setContactName(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-all"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Corporate Email</label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="name@company.com"
-                      value={contactEmail}
-                      onChange={(e) => setContactEmail(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Stakeholder Class</label>
-                    <select
-                      value={contactRole}
-                      onChange={(e) => setContactRole(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none transition-all font-mono"
-                    >
-                      <option value="Builder">Builder / Developer</option>
-                      <option value="Supplier">Material Supplier</option>
-                      <option value="Contractor">Civil Sub-Contractor</option>
-                      <option value="Bank">Banker / NBFC Representative</option>
-                      <option value="Broker">Broker / Channel Partner</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Brief Procurement/Onboarding Request</label>
-                  <textarea
-                    required
-                    rows={3}
-                    placeholder="Mention project size, monthly cement requirement, crane listings, or escrow needs..."
-                    value={contactMessage}
-                    onChange={(e) => setContactMessage(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-all resize-none"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs py-2.5 rounded-lg transition-all font-mono tracking-tight flex items-center justify-center gap-1 shadow-lg shadow-emerald-500/10"
-                >
-                  <span>Submit Corporate Request</span>
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              </form>
-            )}
-          </div>
-
-        </div>
-      </section>
-        </>
-      )}
-
       {/* Business Details Portfolio Modal Popup -> Re-engineered as Sprint 05 Business Profile Engine */}
       {selectedBusiness && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 lg:p-8 z-50 overflow-y-auto">
@@ -4862,6 +4111,7 @@ export default function LandingPortal({
               showToast={showToast}
               userRole={userSession?.role}
               currentOrgId={userSession?.orgId}
+              userOrgRole={userSession?.orgRole}
               onProfileSaved={() => {
                 reloadCompanies();
                 onSessionStale?.();
@@ -5008,6 +4258,7 @@ export default function LandingPortal({
                         type="email"
                         required
                         autoComplete="username"
+                        readOnly={!!inviteCode}
                         value={authEmail}
                         onChange={(e) => setAuthEmail(e.target.value)}
                         placeholder="sourcing@adani.com"
@@ -5029,7 +4280,17 @@ export default function LandingPortal({
                     </div>
                   </div>
 
-                  {authModalTab === 'signup' && (
+                  {authModalTab === 'signup' && inviteCode && (
+                    <>
+                      <p className="text-[11px] text-emerald-400 leading-relaxed">You were invited to join a company on RealtyConnect. Choose a password to create your account.</p>
+                      <div>
+                        <label htmlFor="auth-name" className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Your Name</label>
+                        <input id="auth-name" type="text" required autoComplete="name" value={authName} onChange={(e) => setAuthName(e.target.value)} placeholder="Full name" className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-all" />
+                      </div>
+                    </>
+                  )}
+
+                  {authModalTab === 'signup' && !inviteCode && (
                     <>
                       <p className="text-[10px] text-slate-500 leading-relaxed">
                         Passwords need 12+ characters with an uppercase letter, a lowercase letter, a digit and a special character.
@@ -5115,17 +4376,10 @@ export default function LandingPortal({
 
               {/* Actions Footer */}
               <div className="border-t border-slate-850/60 pt-4 flex flex-col sm:flex-row gap-3 items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAuthModalOpen(false);
-                    onStartOnboarding();
-                  }}
-                  className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-emerald-400 font-mono transition-all cursor-pointer"
-                >
+                <p className="flex items-center gap-1.5 text-[11px] text-slate-500">
                   <Lock className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Explore the guided onboarding walkthrough</span>
-                </button>
+                  {authModalTab === 'signin' ? 'New here? Choose Create Account above.' : 'Your company is listed in the directory as soon as you sign up.'}
+                </p>
                 
                 <button
                   type="submit"
@@ -5169,9 +4423,9 @@ export default function LandingPortal({
 
             <div className="flex flex-wrap items-center gap-6 text-slate-400 font-medium">
               <a href="#discovery-portal" className="hover:text-emerald-400">Directory</a>
-              <a href="#stakeholder-entry" className="hover:text-emerald-400">Stakeholders</a>
-              <a href="#membership" className="hover:text-emerald-400">Membership</a>
-              <a href="#contact" className="hover:text-emerald-400">Onboarding Support</a>
+              <button type="button" onClick={() => setActiveViewMode('directory')} className="hover:text-emerald-400">Businesses</button>
+              <button type="button" onClick={() => setActiveViewMode(userSession ? 'analytics_subscription' : 'home')} className="hover:text-emerald-400">Plans</button>
+              
             </div>
           </div>
 

@@ -3,7 +3,11 @@
  * An enterprise-grade, high-fidelity quotation and tender exchange platform.
  */
 
-import { currentOrgId, currentOrgName, currentUserName } from '../lib/identity';
+import { currentOrgId, currentOrgName, currentOrgVerified, currentUserName } from '../lib/identity';
+import { api, errorMessage } from '../lib/api';
+import { openFile, uploadFile } from '../lib/files';
+import { isRegisteredCompanyId } from '../lib/companies';
+import { useStoreSync } from '../lib/usePersistentState';
 import { appStore } from '../lib/appStore';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
@@ -94,6 +98,7 @@ export interface RfqTender {
   unit: string;
   technicalSpecification: string;
   attachmentName?: string;
+  attachmentFileId?: string;
   location: string;
   deliveryLocation: string;
   expectedDeliveryDate: string;
@@ -128,6 +133,7 @@ export interface QuotationResponse {
   deliveryTimeline: string;
   remarks: string;
   attachmentName?: string;
+  attachmentFileId?: string;
   submittedDate: string;
   status: 'Pending' | 'Accepted' | 'Declined' | 'Under Review';
 }
@@ -375,6 +381,10 @@ export default function BusinessRfqEngine({
     return saved ? JSON.parse(saved) : ['rfq-seed-1', 'rfq-seed-5'];
   });
 
+  // RFQs and quotations delivered by other companies appear without a reload.
+  useStoreSync<RfqTender[]>('realtyconnect_rfq_list', setRfqList);
+  useStoreSync<QuotationResponse[]>('realtyconnect_quotation_list', setQuotationList);
+
   // Sync to local storage
   useEffect(() => {
     appStore.setItem('realtyconnect_rfq_list', JSON.stringify(rfqList));
@@ -442,6 +452,7 @@ export default function BusinessRfqEngine({
 
   // File upload simulator states
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
+  const [uploadedFileId, setUploadedFileId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
   // My RFQs inner filtering: 'published' | 'drafts' | 'saved' | 'submissions'
@@ -574,15 +585,21 @@ export default function BusinessRfqEngine({
   };
 
   // Simulated file upload handler
-  const handleSimulatedUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSimulatedUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     setIsUploading(true);
-    setTimeout(() => {
+    try {
+      const stored = await uploadFile(file);
+      setUploadedFile(stored.name);
+      setUploadedFileId(stored.id);
+      showToast(`"${stored.name}" uploaded and attached.`, 'success');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
+    } finally {
       setIsUploading(false);
-      setUploadedFile(file.name);
-      showToast(`Document "${file.name}" uploaded and virus-scanned. Ready for tender.`, 'success');
-    }, 1500);
+    }
   };
 
   // Submit quotation to RFQ
@@ -605,10 +622,37 @@ export default function BusinessRfqEngine({
       validity: quoteForm.validity,
       deliveryTimeline: quoteForm.deliveryTimeline,
       remarks: quoteForm.remarks,
-      attachmentName: uploadedFile || 'Certified_RERA_Compliant_Profile.pdf',
+      attachmentName: uploadedFile || undefined,
+      attachmentFileId: uploadedFileId || undefined,
       submittedDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
       status: 'Pending'
     };
+
+    if (isRegisteredCompanyId(selectedRfq.companyId)) {
+      // The company that issued the RFQ receives the quotation in its own workspace.
+      api('POST', '/network/bids', {
+        toOrgId: selectedRfq.companyId,
+        bidId: newQuote.id,
+        rfqId: selectedRfq.id,
+        rfqTitle: selectedRfq.title,
+        quotationAmount: newQuote.quotationAmount,
+        validity: newQuote.validity,
+        deliveryTimeline: newQuote.deliveryTimeline,
+        remarks: newQuote.remarks,
+        ...(newQuote.attachmentName ? { attachmentName: newQuote.attachmentName } : {}),
+        ...(newQuote.attachmentFileId ? { attachmentFileId: newQuote.attachmentFileId } : {})
+      })
+        .then(() => {
+          setQuotationList(prev => [newQuote, ...prev.filter(q => q.id !== newQuote.id)]);
+          showToast(`Quotation of ${newQuote.quotationAmount} delivered to ${selectedRfq.companyName}.`, 'success');
+          onLogTriggered('RFQ_QUOTATION_SUBMITTED', 'rfq_quotations', selectedRfq.id, 'SUCCESS', `Submitted B2B quotation for ${selectedRfq.rfqNumber}. Bidding amount: ${newQuote.quotationAmount}.`);
+          setIsSubmittingQuote(false);
+          setUploadedFile(null);
+    setUploadedFileId(null);
+        })
+        .catch(err => showToast(`Quotation not delivered: ${errorMessage(err)}`, 'error'));
+      return;
+    }
 
     setQuotationList(prev => [newQuote, ...prev]);
 
@@ -679,6 +723,7 @@ export default function BusinessRfqEngine({
       attachmentName: ''
     });
     setUploadedFile(null);
+    setUploadedFileId(null);
     setIsSubmittingQuote(false);
   };
 
@@ -703,6 +748,7 @@ export default function BusinessRfqEngine({
       unit: newRfqForm.unit,
       technicalSpecification: newRfqForm.technicalSpecification || 'Standard ASTM / Bureau of Indian Standards (BIS) parameters apply.',
       attachmentName: uploadedFile || undefined,
+      attachmentFileId: uploadedFileId || undefined,
       location: newRfqForm.location,
       deliveryLocation: newRfqForm.deliveryLocation || newRfqForm.location,
       expectedDeliveryDate: newRfqForm.expectedDeliveryDate || '2026-09-01',
@@ -715,8 +761,8 @@ export default function BusinessRfqEngine({
       companyName: currentOrgName(),
       companyLogoBg: userSession?.logoBg || 'bg-emerald-600',
       companyLogoText: userSession?.name?.substring(0, 2).toUpperCase() || 'MY',
-      verified: true,
-      premium: true,
+      verified: currentOrgVerified(),
+      premium: false,
       postedDate: new Date().toISOString().substring(0, 10),
       bidsCount: 0,
       isFeatured: false,
@@ -726,6 +772,8 @@ export default function BusinessRfqEngine({
     };
 
     setRfqList(prev => [newRfqItem, ...prev]);
+    // Bidders (other companies) must be able to open the tender documents.
+    if (uploadedFileId) api('POST', `/files/${uploadedFileId}/publish`).catch(err => showToast(`The attachment could not be shared with bidders: ${errorMessage(err)}`, 'error'));
 
     // INTEGRATION 2: Automatically publish a B2B professional feed update
     const feedId = `feed-rfq-${Date.now()}`;
@@ -780,6 +828,7 @@ export default function BusinessRfqEngine({
       attachmentName: ''
     });
     setUploadedFile(null);
+    setUploadedFileId(null);
     setActiveTab('directory');
   };
 
@@ -810,6 +859,11 @@ export default function BusinessRfqEngine({
 
   // Manage quotation status lifecycle (My RFQs panel)
   const handleUpdateQuoteStatus = (quoteId: string, status: 'Accepted' | 'Declined' | 'Under Review') => {
+    const quote = quotationList.find(q => q.id === quoteId);
+    if (quote && isRegisteredCompanyId(quote.companyId)) {
+      // Tell the bidding company the outcome.
+      api('POST', `/network/bids/${encodeURIComponent(quoteId)}/status`, { status }).catch(err => showToast(errorMessage(err), 'error'));
+    }
     setQuotationList(prev => prev.map(q => {
       if (q.id === quoteId) {
         return { ...q, status };
@@ -1330,7 +1384,7 @@ export default function BusinessRfqEngine({
                                   </p>
 
                                   <div className="flex justify-between items-center text-[10px] font-mono pt-1">
-                                    <span className="text-slate-500">Attachment: <span className="text-slate-300 hover:underline cursor-pointer">{q.attachmentName}</span></span>
+                                    <span className="text-slate-500">Attachment: {q.attachmentName ? <span onClick={() => q.attachmentFileId && openFile(q.attachmentFileId).then(ok => ok || showToast('The file could not be opened.', 'error'))} className="text-slate-300 hover:underline cursor-pointer">{q.attachmentName}</span> : 'none'}</span>
                                     
                                     <div className="flex gap-2">
                                       <button
@@ -1900,7 +1954,9 @@ export default function BusinessRfqEngine({
                     </div>
                     <button
                       type="button"
-                      onClick={() => showToast(`Simulated download of ${selectedRfq.attachmentName} completed.`, 'info')}
+                      onClick={() => selectedRfq.attachmentFileId
+                        ? openFile(selectedRfq.attachmentFileId).then(ok => ok || showToast('The file could not be opened.', 'error'))
+                        : showToast('This sample RFQ has no downloadable file.', 'info')}
                       className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded font-mono text-[10px] border border-slate-850 flex items-center gap-1 cursor-pointer"
                     >
                       <Download className="w-3 h-3" />
